@@ -4,6 +4,8 @@
 //
 //  Created by Shariq Charolia on 2026-09-13
 
+import Foundation
+
 enum MediaApplicationIdentity {
     static func canonicalBundleID(_ bundleID: String?) -> String? {
         guard let bundleID else { return nil }

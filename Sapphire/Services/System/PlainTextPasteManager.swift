@@ -11,6 +11,8 @@ import Combine
 
 enum SapphireSyntheticEventMarker {
     static let plainTextPaste: Int64 = 0x5341505048495245
+    /// Blip's pointer and keyboard input; Sapphire's own event taps let it through untouched.
+    static let agentInput: Int64 = 0x424C49504147454E
 }
 
 private struct PasteboardSnapshot: @unchecked Sendable {

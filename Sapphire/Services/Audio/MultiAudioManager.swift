@@ -199,6 +199,15 @@ class MultiAudioManager: ObservableObject {
         engine.onProcessListChanged = { [weak self] in
             Task { @MainActor in self?.scheduleReconcile() }
         }
+        engine.state.onDeviceTrims = { [weak self] trims in
+            Task { @MainActor in
+                EQVolumeCompensator.shared.setTargets(trims)
+                self?.scheduleReconcile()
+            }
+        }
+        let headroomMode = EQHeadroomMode.current
+        engine.state.setHeadroomMode(headroomMode)
+        if headroomMode != .raiseOutputVolume { EQVolumeCompensator.shared.removeAll() }
         pushAllParameters()
         engine.start()
         AudioOutputSwitcher.shared.start()
@@ -254,6 +263,12 @@ class MultiAudioManager: ObservableObject {
 
     func setAppEQ(bundleID: String, gains: [Double], bassGain: Double = 0.0) {
         pushAppParameters(for: bundleID)
+    }
+
+    func setEQHeadroomMode(_ mode: EQHeadroomMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: EQHeadroomMode.defaultsKey)
+        engine.state.setHeadroomMode(mode)
+        scheduleReconcile()
     }
 
     func eightDAudioSettings(for bundleID: String) -> EightDAudioSettings {
@@ -528,6 +543,13 @@ class MultiAudioManager: ObservableObject {
         if !tapAll {
             tapAll = globalOutputs.contains { uid in settingsByUID[uid].map(Self.requiresProcessing) ?? false }
         }
+        // Raise Output Volume lifts the whole output, so every app on it has to carry the matching pre-cut.
+        let activeOutputs = Set(globalOutputs).union(appRoutes.values.filter(available.contains))
+        engine.state.setActiveOutputs(activeOutputs)
+        if !tapAll {
+            let trimmed = engine.state.trimmedOutputUIDs()
+            tapAll = globalOutputs.contains(where: trimmed.contains)
+        }
 
         var adjusted = PerAppAudioController.shared.adjustedBundleIDs()
         for (bundleID, settings) in eightDAudioSettingsByBundleID where settings.enabled && PremiumGate.hasAccess(.audio8D) {
@@ -580,6 +602,7 @@ class MultiAudioManager: ObservableObject {
             hasAppliedSnapshot = true
             rematchSelectedDevices(to: previouslySelectedUIDs)
             AudioOutputSwitcher.shared.devicesDidChange(snapshot)
+            EQVolumeCompensator.shared.reconcile()
             scheduleReconcile()
         }
     }
@@ -764,8 +787,10 @@ final class AppTapController {
     private var deviceBalance: Float = 0.5
     private var deviceDelay: Float = 0.0
     private var deviceEqKey = EQKey(gains: AudioEQ.flat, bass: 0)
+    private var eqHeadroom = EQHeadroomMode.fixed
+    private var eqTrimDB = 0.0
     private var eqSampleRate: Double
-    private var installedEQ: (app: EQKey, device: EQKey, sampleRate: Double)?
+    private var installedEQ: (app: EQKey, device: EQKey, headroom: EQHeadroomMode, trimDB: Double, sampleRate: Double)?
     private var pendingEightDSettings = EightDAudioSettings()
     private var pendingSurroundSettings = SurroundAudioSettings()
     private var isInvalidated = false
@@ -996,6 +1021,16 @@ final class AppTapController {
         installEQ(EQKey(gains: AudioEQ.normalize(gains), bass: bassGain), isApp: false)
     }
 
+    /// `trimDB` is the device-wide pre-cut for Raise Output Volume (0 otherwise).
+    func updateEQHeadroom(_ mode: EQHeadroomMode, trimDB: Double) {
+        os_unfair_lock_lock(parameterLock)
+        let changed = eqHeadroom != mode || eqTrimDB != trimDB
+        eqHeadroom = mode
+        eqTrimDB = trimDB
+        os_unfair_lock_unlock(parameterLock)
+        if changed { scheduleEQDesign() }
+    }
+
     private func installEQ(_ key: EQKey, isApp: Bool) {
         os_unfair_lock_lock(parameterLock)
         if isApp { appEqKey = key } else { deviceEqKey = key }
@@ -1008,14 +1043,16 @@ final class AppTapController {
             guard let self else { return }
             os_unfair_lock_lock(self.parameterLock)
             let app = self.appEqKey, device = self.deviceEqKey, rate = self.eqSampleRate
+            let headroom = self.eqHeadroom, trimDB = self.eqTrimDB
             let invalidated = self.isInvalidated
             os_unfair_lock_unlock(self.parameterLock)
             guard !invalidated else { return }
-            if let installed = self.installedEQ, installed.app == app, installed.device == device, installed.sampleRate == rate { return }
-            self.installedEQ = (app, device, rate)
+            if let installed = self.installedEQ, installed.app == app, installed.device == device,
+               installed.headroom == headroom, installed.trimDB == trimDB, installed.sampleRate == rate { return }
+            self.installedEQ = (app, device, headroom, trimDB, rate)
 
             let gains = zip(app.gains, device.gains).map { $0 + $1 }
-            let design = GraphicEQDesigner.design(gains: gains, bass: app.bass + device.bass, sampleRate: rate)
+            let design = GraphicEQDesigner.design(gains: gains, bass: app.bass + device.bass, sampleRate: rate, headroom: headroom, trimDB: trimDB)
             self.primaryEQ.post(design)
             self.secondaryEQ.post(design)
         }

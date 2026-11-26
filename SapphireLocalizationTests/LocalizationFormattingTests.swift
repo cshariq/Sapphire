@@ -147,8 +147,9 @@ final class LocalizationFormattingTests: XCTestCase {
     }
 
     func testCountsKeepTheOriginalEnglishWording() {
-        // Before localization these English strings did not switch to a singular form.
-        XCTAssertEqual(String(localized: "\(1) items"), expected("1 items", "1 项", "1 個項目"))
+        // Before localization these English strings did not switch to a singular form. "%lld items"
+        // now has plural variants (it replaced the "item\(count == 1 ? "" : "s")" suffix call sites).
+        XCTAssertEqual(String(localized: "\(1) items"), expected("1 item", "1 项", "1 個項目"))
         XCTAssertEqual(String(localized: "\(1) notes"), expected("1 notes", "1 条笔记", "1 則備忘錄"))
         XCTAssertEqual(String(localized: "\(1) Events"), expected("1 Events", "1 个日程", "1 個行程"))
         XCTAssertEqual(String(localized: "\(String(1000)) sessions"), expected("1000 sessions", "1000 次专注", "1000 次專注"))

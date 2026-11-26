@@ -330,6 +330,8 @@ final class NotchMorphEngine: ObservableObject {
         weak var owner: AnyObject?
         let render: @MainActor (NotchMorphFrame) -> Void
         let animate: (@MainActor (NotchMorphTimeline) -> Void)?
+        /// Drops whatever `animate` installed, because the engine stopped playing that timeline.
+        let cancel: (@MainActor () -> Void)?
     }
     private var renderers: [ObjectIdentifier: Renderer] = [:]
 
@@ -392,9 +394,34 @@ final class NotchMorphEngine: ObservableObject {
         pending.append(PendingTarget(group: group, values: values, curve: curve))
         if usesTimelines {
             scheduleTimelineFlush()
-        } else if !driver.start() {
-            applyPending(at: CACurrentMediaTime())
-            renderNow()
+        } else {
+            abandonTimeline()
+            if !driver.start() {
+                applyPending(at: CACurrentMediaTime())
+                renderNow()
+            }
+        }
+    }
+
+    /// Ends a timeline that is still playing when the engine switches to driving frames itself.
+    ///
+    /// That switch happens when a renderer without `animate` joins mid-motion: the open panel's glass
+    /// surface arrives while the hover or activity pill's timeline is still running. Left alone, the
+    /// old timeline kept its keyframes on the content clip and stayed `activeTimeline` until it
+    /// settled, so content mounted for the open (widget plane, header) followed the pill-sized
+    /// outline of that old timeline and stayed hidden, then popped in when it ended (about 1 s
+    /// after the hover started).
+    private func abandonTimeline() {
+        guard activeTimeline != nil else { return }
+        #if DEBUG
+        // A/B switch for checking the stale-timeline fix against the old behaviour.
+        if UserDefaults.standard.bool(forKey: "notchMorphKeepStaleTimeline") { return }
+        #endif
+        activeTimeline = nil
+        settleWork?.cancel()
+        settleWork = nil
+        for renderer in Array(renderers.values) where renderer.owner != nil {
+            renderer.cancel?()
         }
     }
 
@@ -413,6 +440,7 @@ final class NotchMorphEngine: ObservableObject {
     private func flushTimeline() {
         guard !pending.isEmpty else { return }
         guard usesTimelines else {
+            abandonTimeline()
             if !driver.start() {
                 applyPending(at: CACurrentMediaTime())
                 renderNow()
@@ -552,6 +580,7 @@ final class NotchMorphEngine: ObservableObject {
             return
         }
         if !pending.isEmpty || isAnimating(at: CACurrentMediaTime()) {
+            abandonTimeline()
             if !driver.start() {
                 applyPending(at: CACurrentMediaTime())
                 renderNow()
@@ -635,10 +664,11 @@ final class NotchMorphEngine: ObservableObject {
     func addRenderer(
         _ owner: AnyObject,
         render: @escaping @MainActor (NotchMorphFrame) -> Void,
-        animate: (@MainActor (NotchMorphTimeline) -> Void)? = nil
+        animate: (@MainActor (NotchMorphTimeline) -> Void)? = nil,
+        cancel: (@MainActor () -> Void)? = nil
     ) {
         renderers = renderers.filter { $0.value.owner != nil }
-        renderers[ObjectIdentifier(owner)] = Renderer(owner: owner, render: render, animate: animate)
+        renderers[ObjectIdentifier(owner)] = Renderer(owner: owner, render: render, animate: animate, cancel: cancel)
     }
 
     func removeRenderer(_ owner: AnyObject) {

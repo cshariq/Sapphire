@@ -923,10 +923,35 @@ class MusicManager {
     }
 
     var isAppleMusicContext: Bool {
+        if isTidalContext { return false }
         if lastKnownBundleID == "com.apple.Music" { return true }
         if isSpotifySourceActive || isSpotifyLiveSourceSelected { return false }
-        if title != nil, lastKnownBundleID == DefaultMusicPlayer.tidal.bundleIdentifier { return false }
         return settingsModel.current.defaultMusicPlayer == .appleMusic
+    }
+
+    /// TIDAL is what the hub should present: it's the source on screen, or nothing is playing and
+    /// TIDAL is the last source, the default player, or signed in while Apple Music has no catalog
+    /// subscription (a library-only Apple Music account loses to a TIDAL login). Never true while
+    /// another app's track is showing, and never overrides a Spotify login when idle.
+    var isTidalContext: Bool {
+        let tidal = DefaultMusicPlayer.tidal.bundleIdentifier
+        if title != nil { return lastKnownBundleID == tidal }
+        guard !isPrivateAPIAuthenticated, !isOfficialAPIAuthenticated else { return false }
+        if isSpotifySourceActive || isSpotifyLiveSourceSelected { return false }
+        if lastKnownBundleID == tidal || settingsModel.current.defaultMusicPlayer == .tidal { return true }
+        let tidalBeatsAppleMusic = tidalAPI.isAuthenticated && !appleMusic.hasCatalogSubscription
+        if lastKnownBundleID == "com.apple.Music" { return tidalBeatsAppleMusic && !appleMusic.isInAppPlaybackActive }
+        return tidalBeatsAppleMusic
+    }
+
+    /// The music hub's tabs lead with TIDAL whenever it's signed in and Apple Music can't play the
+    /// catalog, even while another app's track is on screen. Only a Spotify track that a Spotify
+    /// login can drive keeps its live queue. Playback routing still uses `isTidalContext`.
+    var prefersTidalHub: Bool {
+        if isTidalContext { return true }
+        guard tidalAPI.isAuthenticated, !appleMusic.hasCatalogSubscription else { return false }
+        let spotifyOnScreen = isSpotifySourceActive || isSpotifyLiveSourceSelected
+        return !(spotifyOnScreen && (isPrivateAPIAuthenticated || isOfficialAPIAuthenticated))
     }
 
     private var isAppleMusicInAppSource: Bool {
@@ -961,6 +986,13 @@ class MusicManager {
 
     var isSpotifySourceActive: Bool {
         isSpotifyDisplayedInUI && lastKnownBundleID != "com.apple.Music"
+    }
+
+    /// Something other than Spotify or Apple Music (TIDAL, a browser, the phone) owns the session.
+    /// The hub's queue/library/discover panes are Spotify-backed, so a Spotify login prompt is wrong here.
+    var isOtherPlayerSourceActive: Bool {
+        guard title != nil, let bundleID = lastKnownBundleID, bundleID != "com.spotify.client" else { return false }
+        return !isSpotifySourceActive && !isSpotifyLiveSourceSelected && !isAppleMusicContext
     }
 
     var isSpotifyPausedWithNoSystemMediaPlaying: Bool {
@@ -2650,7 +2682,7 @@ class MusicManager {
         self.isPlaying = false; self.totalDuration = 0; self.currentElapsedTime = 0
         self.lastHandledTrackKey = nil
         self.resetLyricsState()
-        if !settingsModel.current.persistMusicWidgetWhenPaused {
+        if settingsModel.current.musicWidgetVisibility != .always {
             self.title = nil; self.artist = nil; self.album = nil; clearArtwork()
         }
     }

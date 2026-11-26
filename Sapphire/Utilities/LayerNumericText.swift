@@ -118,7 +118,12 @@ final class LayerNumericTextView: NSView {
         NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
     }
 
-    func update(text newText: String, font newFont: NSFont, color newColor: NSColor, duration: CFTimeInterval, animated: Bool) {
+    /// `invalidatesSize: false` is for callers that know the text keeps its width: the digits are
+    /// re-laid out here without asking SwiftUI to measure and lay out the hosting view again.
+    func update(
+        text newText: String, font newFont: NSFont, color newColor: NSColor, duration: CFTimeInterval, animated: Bool,
+        invalidatesSize: Bool = true
+    ) {
         let styleChanged = newFont != font || newColor != color
         font = newFont
         color = newColor
@@ -163,7 +168,11 @@ final class LayerNumericTextView: NSView {
             leaving.forEach { $0.removeFromSuperlayer() }
         }
         CATransaction.commit()
-        invalidateIntrinsicContentSize()
+        if invalidatesSize {
+            invalidateIntrinsicContentSize()
+        } else {
+            needsLayout = true
+        }
     }
 
     private static func direction(from old: String, to new: String) -> CGFloat {
@@ -227,5 +236,115 @@ final class LayerNumericTextView: NSView {
             layer.opacity = 0
         }
         layer.add(group, forKey: entering ? "numericIn" : "numericOut")
+    }
+}
+/// A clock that counts up from a past date or down to a future one, like
+/// `Text(date, style: .timer)`, but ticking inside its own layer-backed view.
+///
+/// SwiftUI's timer text re-resolves and re-measures on every tick, and the hosting view
+/// then runs a full layout and render pass: about 6 ms a second in an activity pill. Here a
+/// tick only swaps the digit layers; SwiftUI is told to measure again only when the text
+/// gets wider or narrower (9:59 to 10:00).
+struct LayerTimerText: NSViewRepresentable {
+    let date: Date
+    let font: NSFont
+    let color: NSColor
+
+    final class Coordinator {
+        var date = Date()
+        var font = NSFont.systemFont(ofSize: 13)
+        var color = NSColor.white
+        var text = ""
+        weak var view: LayerNumericTextView?
+        private var timer: Timer?
+
+        func start() {
+            stop()
+            refresh()
+            scheduleNextTick()
+        }
+
+        func stop() {
+            timer?.invalidate()
+            timer = nil
+        }
+
+        /// Fires just after the next whole second of elapsed time, so the digits change on time.
+        private func scheduleNextTick() {
+            let elapsed = abs(Date().timeIntervalSince(date))
+            let untilNext = max(0.02, 1 - elapsed.truncatingRemainder(dividingBy: 1) + 0.01)
+            let timer = Timer(timeInterval: untilNext, repeats: false) { [weak self] _ in
+                guard let self, self.view?.window != nil else { return }
+                self.refresh()
+                self.scheduleNextTick()
+            }
+            timer.tolerance = 0.05
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
+        }
+
+        func refresh() {
+            let next = LayerTimerText.string(for: date, now: Date())
+            let widthChanged = next.count != text.count
+            text = next
+            guard let view else { return }
+            view.update(text: next, font: font, color: color, duration: 0, animated: false, invalidatesSize: widthChanged)
+        }
+    }
+
+    static func string(for date: Date, now: Date) -> String {
+        // Counting down shows the second it is in until that second is over.
+        let interval = date.timeIntervalSince(now)
+        let total = Int(interval > 0 ? interval.rounded(.up) : -interval)
+        let hours = total / 3600, minutes = (total % 3600) / 60, seconds = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%d:%02d", minutes, seconds)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> LayerNumericTextView {
+        let view = LayerNumericTextView()
+        let coordinator = context.coordinator
+        coordinator.view = view
+        coordinator.date = date
+        coordinator.font = font
+        coordinator.color = color
+        coordinator.start()
+        return view
+    }
+
+    func updateNSView(_ nsView: LayerNumericTextView, context: Context) {
+        let coordinator = context.coordinator
+        guard coordinator.date != date || coordinator.font != font || coordinator.color != color else { return }
+        coordinator.date = date
+        coordinator.font = font
+        coordinator.color = color
+        coordinator.start()
+    }
+
+    static func dismantleNSView(_ nsView: LayerNumericTextView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: LayerNumericTextView, context: Context) -> CGSize? {
+        LayerNumericTextView.size(of: context.coordinator.text, font: font)
+    }
+}
+
+extension LayerTimerText {
+    func textBaseline() -> some View {
+        alignmentGuide(.lastTextBaseline) { $0.height + font.descender }
+            .alignmentGuide(.firstTextBaseline) { $0.height + font.descender }
+    }
+}
+
+extension NSFont {
+    /// System font in the rounded design with fixed-width digits, for layer-drawn clocks.
+    static func roundedDigits(ofSize size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let base = NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+        guard let descriptor = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return NSFont(descriptor: descriptor, size: size) ?? base
     }
 }

@@ -47,6 +47,8 @@ struct BatteryDetailView: View {
     // MARK: - Charge limit (drag the pill across the battery bar)
 
     private var chargeLimit: Int { settings.settings.batteryChargeLimit }
+    /// Without battery management there is no limit to show or drag.
+    private var managesCharging: Bool { settings.settings.batteryManagementEnabled }
     private var displayedLimit: Double { dragLimit ?? Double(chargeLimit) }
 
     // MARK: - System Power hero (mirrors the Settings power hero card)
@@ -110,7 +112,7 @@ struct BatteryDetailView: View {
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(levelColor)
                         .transition(.opacity)
-                } else {
+                } else if managesCharging {
                     Text("Charge limit \(chargeLimit)%")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.white.opacity(0.65))
@@ -148,13 +150,15 @@ struct BatteryDetailView: View {
                 }
                 .foregroundColor(.white.opacity(0.92))
                 .padding(.leading, 10)
-                Capsule()
-                    .fill(Color.white)
-                    .frame(width: markerWidth, height: 24)
-                    .shadow(color: .black.opacity(0.45), radius: 1.5, y: 0.5)
-                    .scaleEffect(dragLimit == nil ? 1 : 1.3, anchor: .center)
-                    .offset(x: markerX - markerWidth / 2)
-                    .animation(dragLimit == nil ? .spring(response: 0.25, dampingFraction: 0.8) : nil, value: displayedLimit)
+                if managesCharging {
+                    Capsule()
+                        .fill(Color.white)
+                        .frame(width: markerWidth, height: 24)
+                        .shadow(color: .black.opacity(0.45), radius: 1.5, y: 0.5)
+                        .scaleEffect(dragLimit == nil ? 1 : 1.3, anchor: .center)
+                        .offset(x: markerX - markerWidth / 2)
+                        .animation(dragLimit == nil ? .spring(response: 0.25, dampingFraction: 0.8) : nil, value: displayedLimit)
+                }
             }
             .frame(height: 24)
             .contentShape(Rectangle())
@@ -170,9 +174,10 @@ struct BatteryDetailView: View {
                             showChargeLimitMessage(Int(limit.rounded()))
                         }
                         dragLimit = nil
-                    }
+                    },
+                including: managesCharging ? .all : .none
             )
-            .help("Drag to set the charge limit. Charging pauses at this level to help preserve battery health.")
+            .help(managesCharging ? Text("Drag to set the charge limit — charging pauses at this level to help preserve battery health.") : Text(verbatim: ""))
         }
         .frame(height: 24)
     }

@@ -59,41 +59,34 @@ final class SystemEnhanceHingeAnimationTests: XCTestCase {
         XCTAssertFalse(state.shouldShowOverlay)
     }
 
-    func testProjectiveGeometryIsIdentityAtActivation() {
+    func testRoomLockIsIdentityAtActivation() {
         let size = CGSize(width: 1_512, height: 982)
-        let projection = SEHingeProjectionGeometry.resolve(
-            startAngle: 105,
-            currentAngle: 105,
-            intensity: 1,
-            screenSize: size
-        )
+        let projection = SEHingeProjectionGeometry.resolve(lockRadians: 0, screenSize: size)
 
-        assertPoint(projection.project(.zero), equals: .zero)
+        assertPoint(projection.picturePoint(forScreenPoint: .zero), equals: .zero)
         assertPoint(
-            projection.project(CGPoint(x: size.width, y: size.height)),
+            projection.picturePoint(forScreenPoint: CGPoint(x: size.width, y: size.height)),
             equals: CGPoint(x: size.width, y: size.height)
         )
     }
 
-    func testProjectiveGeometryPinsHingeAndRecedesFreeEdge() {
+    func testRoomLockPinsHingeAndWidensFreeEdgeView() {
         let size = CGSize(width: 1_512, height: 982)
-        let projection = SEHingeProjectionGeometry.resolve(
-            startAngle: 105,
-            currentAngle: 55,
-            intensity: 1,
-            screenSize: size
-        )
-        let bottomLeft = projection.project(.zero)
-        let bottomRight = projection.project(CGPoint(x: size.width, y: 0))
-        let topLeft = projection.project(CGPoint(x: 0, y: size.height))
-        let topRight = projection.project(CGPoint(x: size.width, y: size.height))
+        let projection = SEHingeProjectionGeometry.resolve(lockRadians: 50 * .pi / 180, screenSize: size)
+        let bottomLeft = projection.picturePoint(forScreenPoint: .zero)
+        let bottomRight = projection.picturePoint(forScreenPoint: CGPoint(x: size.width, y: 0))
+        let topLeft = projection.picturePoint(forScreenPoint: CGPoint(x: 0, y: size.height))
+        let topRight = projection.picturePoint(forScreenPoint: CGPoint(x: size.width, y: size.height))
 
-        XCTAssertEqual(projection.separationRadians, 50 * .pi / 180, accuracy: 0.000_001)
         assertPoint(bottomLeft, equals: .zero)
         assertPoint(bottomRight, equals: CGPoint(x: size.width, y: 0))
-        XCTAssertGreaterThan(topLeft.x, 0)
-        XCTAssertLessThan(topRight.x, size.width)
+        // The lid's top edge has swung toward the viewer, so like a window held closer it shows a wider band of
+        // the picture, centred, and a lower one: the picture's top rows are hidden behind the closing lid.
+        XCTAssertLessThan(topLeft.x, 0)
+        XCTAssertGreaterThan(topRight.x, size.width)
+        XCTAssertEqual(topLeft.x + topRight.x, size.width, accuracy: 0.000_001)
         XCTAssertGreaterThan(topLeft.y, 0)
+        XCTAssertLessThan(topLeft.y, size.height)
         XCTAssertEqual(topLeft.y, topRight.y, accuracy: 0.000_001)
     }
 
@@ -108,6 +101,19 @@ final class SystemEnhanceHingeAnimationTests: XCTestCase {
 
         estimator.update(angle: 89, at: 10.33)
         XCTAssertEqual(estimator.predictedAngle(at: 10.34), 89, accuracy: 0.000_001)
+    }
+
+    func testFollowTargetLeadsAMovingLidAndSettlesWhenItStops() {
+        var estimator = SEHingeMotionEstimator()
+        for step in 0..<6 {
+            estimator.update(angle: 90 - Double(step) * 2, at: 30 + Double(step) / 60)
+        }
+        let moving = estimator.followTarget(at: 30 + 5.0 / 60 + 0.01, springFrequency: 26)
+        XCTAssertLessThan(moving, 80)
+        XCTAssertGreaterThan(moving, 80 - 30)
+
+        let stopped = estimator.followTarget(at: 30 + 5.0 / 60 + 0.3, springFrequency: 26)
+        XCTAssertEqual(stopped, 80, accuracy: 0.000_001)
     }
 
     func testMotionEstimatorChangesDirectionWithoutOldMomentum() {
@@ -130,25 +136,46 @@ final class SystemEnhanceHingeAnimationTests: XCTestCase {
         )
 
         XCTAssertFalse(state.perspectiveEnabled)
+        XCTAssertEqual(state.lockRadians, 0)
         XCTAssertGreaterThan(state.blurRadius, 0)
-        XCTAssertGreaterThan(state.dimOpacity, 0)
+        XCTAssertLessThan(state.hingeBrightness, 1)
         XCTAssertTrue(state.shouldShowOverlay)
     }
 
-    func testDuoDefaultsUseRoomLockedRecessionAndStrongEdgeFrost() {
+    func testDuoDefaultsReachFullFrostAndHalfBrightnessWhenFolded() {
         let settings = Settings()
         XCTAssertEqual(settings.systemEnhanceHingeAnimationActivationAngle, 90)
         XCTAssertEqual(settings.systemEnhanceHingeAnimationIntensity, 1)
         XCTAssertEqual(settings.systemEnhanceHingeAnimationBlur, 135)
 
         let state = SEHingeAnimationVisualState.resolve(
-            angle: 30,
+            angle: SEHingeAnimationVisualState.foldedAngle,
             activationAngle: settings.systemEnhanceHingeAnimationActivationAngle,
             intensity: settings.systemEnhanceHingeAnimationIntensity,
             maximumBlur: settings.systemEnhanceHingeAnimationBlur
         )
         XCTAssertEqual(state.progress, 1, accuracy: 0.000_001)
-        XCTAssertEqual(state.blurRadius, 135, accuracy: 0.000_001)
+        XCTAssertEqual(state.blurRadius, 135 * SEHingeAnimationVisualState.blurScale, accuracy: 0.000_001)
+        XCTAssertEqual(state.hingeBrightness, 0.5, accuracy: 0.000_001)
+        XCTAssertEqual(state.edgeDarkening, 0.5, accuracy: 0.000_001)
+    }
+
+    func testPanelFadesOutToBlackBeforeTheLidCloses() {
+        let fadeStart = state(angle: SEHingeAnimationVisualState.fadeOutAngle)
+        let folded = state(angle: SEHingeAnimationVisualState.foldedAngle)
+        let nearlyShut = state(angle: SEHingeAnimationVisualState.blackoutAngle)
+
+        XCTAssertEqual(fadeStart.closure, 0, accuracy: 0.000_001)
+        XCTAssertGreaterThan(folded.closure, 0)
+        XCTAssertLessThan(folded.closure, 1)
+        XCTAssertEqual(nearlyShut.closure, 1, accuracy: 0.000_001)
+        XCTAssertTrue(nearlyShut.shouldShowOverlay)
+    }
+
+    func testFreeEdgeFadesEarlyInTheFold() {
+        let earlyFold = state(angle: 90)
+        XCTAssertGreaterThan(earlyFold.edgeDarkening, 0.25)
+        XCTAssertGreaterThan(earlyFold.hingeBrightness, 0.95)
     }
 
     func testMalformedInputsFallBackToSafeFiniteValues() {

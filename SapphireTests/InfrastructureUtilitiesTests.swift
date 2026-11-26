@@ -247,42 +247,6 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertTrue(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .audioSwitch))
     }
 
-    func testSpotifyWidgetVisibilityCanHideClosedLoggedInSpotifySource() {
-        XCTAssertFalse(MusicWidgetVisibilityPolicy.shouldShow(
-            isEnabled: true,
-            hideWhenNotPlaying: false,
-            isPlaying: false,
-            hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false,
-            hideSpotifyWhenAppClosed: true,
-            isLoggedIntoSpotify: true,
-            isSpotifyOnlySource: true,
-            isSpotifyAppRunning: false
-        ))
-        XCTAssertTrue(MusicWidgetVisibilityPolicy.shouldShow(
-            isEnabled: true,
-            hideWhenNotPlaying: false,
-            isPlaying: false,
-            hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false,
-            hideSpotifyWhenAppClosed: true,
-            isLoggedIntoSpotify: true,
-            isSpotifyOnlySource: true,
-            isSpotifyAppRunning: true
-        ))
-        XCTAssertTrue(MusicWidgetVisibilityPolicy.shouldShow(
-            isEnabled: true,
-            hideWhenNotPlaying: false,
-            isPlaying: false,
-            hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false,
-            hideSpotifyWhenAppClosed: true,
-            isLoggedIntoSpotify: true,
-            isSpotifyOnlySource: false,
-            isSpotifyAppRunning: false
-        ))
-    }
-
     @MainActor
     func testRuntimeBrightnessDrivesXDRWithoutInvalidatingSettingsObservers() {
         let model = SettingsModel.shared

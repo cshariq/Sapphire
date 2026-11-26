@@ -36,15 +36,22 @@ struct LockScreenConfiguration {
 
     // MARK: - Manager Positioning
     static let spacingMainAboveMini: CGFloat = 24
-    static let spacingBelowClock: CGFloat = 16
+    /// Gap between the bottom of the clock digits and the info widgets.
+    static let spacingBelowClock: CGFloat = 22
     static let spacingMainBelowInfo: CGFloat = 20
     static let minimumMainWidgetScale: CGFloat = 0.6
 
     // MARK: - System Clock
-    private static let legacyClockBottomFraction: CGFloat = 0.23
-    private static let modernClockBottomFraction: CGFloat = 0.31
+    /// Fallbacks for where the clock digits end, as a share of screen height from the top, used
+    /// until `LockScreenClockLocator` has read the real clock (or without Accessibility).
+    /// The modern value is measured on macOS 27 (digits end at y≈268 of 1117).
+    private static let legacyClockBottomFraction: CGFloat = 0.21
+    private static let modernClockBottomFraction: CGFloat = 0.24
 
     static func clockBottomY(on screen: NSScreen) -> CGFloat {
+        if let detected = LockScreenClockLocator.clockBottom(on: screen) {
+            return detected - spacingBelowClock
+        }
         let fraction = ProcessInfo.processInfo.isOperatingSystemAtLeast(
             OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)
         ) ? modernClockBottomFraction : legacyClockBottomFraction
@@ -198,6 +205,10 @@ public class LockScreenManager {
 
     private var contentScales: [String: LockScreenWidgetScale] = [:]
 
+    private var positioners: [String: (CGSize, NSScreen) -> NSRect] = [:]
+    /// loginwindow builds its Accessibility tree a moment after the lock, so the clock is read a few times.
+    private static let clockLocateDelays: [TimeInterval] = [0, 0.3, 0.8, 1.6, 3]
+
     private let MAIN_ID = "mainWidgetContainer"
     private let INFO_ID = "infoWidget"
     private let MINI_ID_PREFIX = "mini"
@@ -286,6 +297,26 @@ public class LockScreenManager {
             guard gen == self.generation else { return }
             self.repositionMainIfPossible()
         }
+
+        for delay in Self.clockLocateDelays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, gen == self.generation else { return }
+                LockScreenClockLocator.refresh { [weak self] changed in
+                    guard let self, changed, gen == self.generation else { return }
+                    self.repositionClockAnchoredWindows()
+                }
+            }
+        }
+    }
+
+    /// Moves the windows placed relative to the clock after its real position is read.
+    private func repositionClockAnchoredWindows() {
+        if let window = windows[INFO_ID]?.window, let screen = window.screen,
+           let size = lastMeasuredSizes[INFO_ID], let positioner = positioners[INFO_ID] {
+            let elapsed = CACurrentMediaTime() - (windowShownAt[INFO_ID] ?? 0)
+            setFrameIfNeeded(window, positioner(size, screen), animated: elapsed >= 0.45)
+        }
+        repositionMainIfPossible()
     }
 
     func calculateMainWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
@@ -393,6 +424,7 @@ public class LockScreenManager {
             delegatedWindowIds.insert(id)
         }
 
+        positioners[id] = positioner
         let scale = contentScales[id] ?? LockScreenWidgetScale()
         scale.value = 1
         contentScales[id] = scale

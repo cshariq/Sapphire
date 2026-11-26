@@ -17,7 +17,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate catalog values and format arguments
         run: python3 script/check_localization.py
       - name: Test catalog validation failures
@@ -32,7 +32,7 @@ jobs:
         run: python3 script/test_localization.py --output localization-result.json
       - name: Preserve native resource results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: localization-resource-results
           path: localization-result.json
@@ -42,7 +42,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build and test four language and region combinations
         env:
           SAPPHIRE_TEST_DERIVED_DATA: ${{ runner.temp }}/SapphireLocalization
@@ -50,7 +50,7 @@ jobs:
         run: bash script/test_localization.sh
       - name: Preserve built resource results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: localization-built-resource-results
           path: ${{ runner.temp }}/SapphireLocalization/LocalizationResults

@@ -146,8 +146,11 @@ struct NotchController: View {
         var blurRemovalTask: Task<Void, Never>?
         var activitySwitchBlurWindowEnd: Date = .distantPast
         var stateTransitionGeneration: UInt64 = 0
+        var planeMorphDetachTransition: UInt64?
         var activityEffectGeneration: UInt64 = 0
         var registeredDisplayID: CGDirectDisplayID?
+        var contentPressReleasedAt: CFTimeInterval = 0
+        var inlineHandledTransition: (from: NotchState, to: NotchState, at: CFTimeInterval)?
     }
     private var morphEngine: NotchMorphEngine { stage.engine }
     private var effects: NotchEffects { stage.effects }
@@ -177,7 +180,9 @@ struct NotchController: View {
     private var isLiveActivityActive: Bool { effectiveActivity != .none }
 
     private var shouldSuppressSnapZoneActivation: Bool {
-        (notchState == .clickExpanded && navigationStack.last != .snapZones)
+        // Fractal Windows owns window drags while it runs: dropping docks.
+        FractalAppHooks.isRunning
+            || (notchState == .clickExpanded && navigationStack.last != .snapZones)
             || (windowDrag.isDragging && windowDrag.isSnapZoneDismissedForCurrentDrag)
             || (windowDrag.isDragging && windowDrag.isSnapZoneBypassModifierPressed)
     }
@@ -291,6 +296,14 @@ struct NotchController: View {
         }
         switch notchState {
         case .initial, .clickExpanded:
+            #if DEBUG
+            if Self.debugForcesGlassPanel {
+                var glass = expanded()
+                glass.mode = .liquidGlass
+                glass.liquidGlassLook = true
+                return glass
+            }
+            #endif
             return expanded()
         case .autoExpanded, .hoverExpanded:
             guard isLiveActivityActive else { return expanded() }
@@ -391,6 +404,14 @@ struct NotchController: View {
         dragManager.isDraggingInActivationZone
             || windowDrag.isDragging
             || (isHovered && NSEvent.pressedMouseButtons != 0)
+    }
+
+    /// A press on the open panel's content (the timer ruler, a slider) is still held.
+    private var isHoldingContentPress: Bool {
+        notchState == .clickExpanded
+            && !dragState.isDraggingFromShelf
+            && !isFileDragSessionInProgress
+            && (notchWindow as? DynamicFocusWindow)?.isHoldingContentPress == true
     }
 
     private var cursorIsOnMyScreen: Bool {
@@ -521,7 +542,7 @@ struct NotchController: View {
         for (side, satellite) in zip(NotchSatelliteSlot.allCases, visibleSatellites) {
             let type = satellite.type
             let view = NotchActivityContentView(
-                content: satellite.content,
+                content: Self.satelliteContent(satellite.content),
                 config: config,
                 horizontalPadding: 0,
                 screen: assignedScreen,
@@ -529,9 +550,7 @@ struct NotchController: View {
                 showLyrics: .constant(false),
                 region: .leading
             )
-            .scaleEffect(0.78)
-            .frame(width: layout.diameter, height: layout.diameter)
-            .contentShape(Circle())
+            .modifier(NotchSatelliteFit(diameter: layout.diameter))
             .onTapGesture { openSatellite(type) }
             .help(Self.satelliteHelp(type))
             pieces[side] = NotchSatellitePiece(
@@ -545,6 +564,14 @@ struct NotchController: View {
             )
         }
         return pieces
+    }
+
+    /// A bubble only fits a glyph, so activities whose leading view carries a label use their icon-only form.
+    private static func satelliteContent(_ content: LiveActivityContent) -> LiveActivityContent {
+        if case let .standard(.battery(state, style, timeRemaining, systemState), id) = content, style != .compact {
+            return .standard(data: .battery(state: state, style: .compact, timeRemaining: timeRemaining, systemState: systemState), id: id)
+        }
+        return content
     }
 
     private func openSatellite(_ type: ActivityType) {
@@ -645,7 +672,14 @@ struct NotchController: View {
     }
 
     // MARK: - Body
+    #if DEBUG
+    private static let printsBodyChanges = UserDefaults.standard.bool(forKey: "notchPrintBodyChanges")
+    #endif
+
     var body: some View {
+        #if DEBUG
+        let _ = Self.printsBodyChanges ? Self._printChanges() : ()
+        #endif
         if let config = config {
             configuredNotchView(config: config)
         } else {
@@ -726,6 +760,7 @@ struct NotchController: View {
             shape: activeShape,
             notchState: notchState,
             isGeminiActive: isGeminiActive,
+            showsSnapEdge: windowDrag.isNotchHintActive && !isShowingSnapZones,
             isManuallyHidden: isManuallyHidden,
             surfaceShadowOpacity: surfaceShadowOpacity,
             radialEndRadius: appearance.backgroundStyle == .radial ? animatedWidth / 2 : 0,
@@ -790,6 +825,11 @@ struct NotchController: View {
 
     private static let fluidCarryDuration: CFTimeInterval = 0.9
 
+    #if DEBUG
+    /// Set by the `panelGlass:on|off` debug hook.
+    @MainActor private static var debugForcesGlassPanel = false
+    #endif
+
     private func applyPlane(to content: inout NotchStageContent, config: ResolvedNotchConfiguration, targetSize: CGSize) {
         content.plane = preparedWidgetPlane(config: config)
         content.planeSize = clickContentLayoutSize.width > 1 && clickContentLayoutSize.height > 1
@@ -812,6 +852,12 @@ struct NotchController: View {
             tags: [String(assignedScreen?.displayID ?? 0)] + (tag.isEmpty ? [] : [tag])
         )
     }
+
+    /// Activities that sit under shorter ones and come back: their pill pieces are kept
+    /// while covered instead of being rebuilt on every return.
+    private static let warmActivityTypes: Set<ActivityType> = [
+        .music, .timer, .capsLock, .persistentBattery, .persistentStats, .persistentWeather,
+    ]
 
     private func activityRegions(config: ResolvedNotchConfiguration, tag: String) -> NotchActivityRegions? {
         var live = liveActivityManager.activityContent
@@ -847,6 +893,7 @@ struct NotchController: View {
             trailing: piece(.trailing),
             bottom: bottomKind == nil ? nil : piece(.bottom),
             identity: AnyHashable(activity),
+            keepsHostsWarm: Self.warmActivityTypes.contains(activity),
             bottomKind: bottomKind ?? "",
             bottomLeading: NotchActivityRegions.bottomIsLeading(for: data),
             key: .init(
@@ -898,7 +945,12 @@ struct NotchController: View {
             }
             .onChange(of: notchState) { oldState, newState in
                 traceCollapseIfNeeded(from: oldState, to: newState)
-                handleStateChange(from: oldState, to: newState)
+                let inline = scratch.inlineHandledTransition
+                scratch.inlineHandledTransition = nil
+                let handledInline = inline.map {
+                    $0.from == oldState && $0.to == newState && CACurrentMediaTime() - $0.at < 0.5
+                } ?? false
+                if !handledInline { handleStateChange(from: oldState, to: newState) }
                 updateSatellitePresence(stateChange: (oldState, newState))
                 updateRuntimeExpansionState()
                 updateSpacePlayPauseTap()
@@ -909,6 +961,7 @@ struct NotchController: View {
             .onChange(of: isCalendarHovered) { _, _ in syncWidgetPlaneState() }
             .onChange(of: dragManager.isDraggingInActivationZone, perform: handleDragActivationZoneChange)
             .onChange(of: windowDrag.isDragging, perform: handleActiveWindowDragChange)
+            .onChange(of: windowDrag.isNotchHintActive, perform: handleNotchHintDragChange)
             .onChange(of: windowDrag.cursorDisplayID, perform: handleWindowDragDisplayChange)
             .onChange(of: windowDrag.isSnapZoneDismissedForCurrentDrag, perform: handleSnapZoneDismissalChange)
             .onChange(of: windowDrag.isSnapZoneBypassModifierPressed) { _, isPressed in
@@ -1023,6 +1076,13 @@ struct NotchController: View {
         }
     }
 
+    /// With only "Activate on Drag" on, another app's window drag never reaches the probe window, so route it to
+    /// the near-notch activation the same way the window-drag trigger does, for this drag only.
+    private func handleNotchHintDragChange(_ isActive: Bool) {
+        guard !windowDrag.isDragging else { return }
+        hoverMonitor?.setExternalMouseDragActive(isActive)
+    }
+
     private func handleActiveWindowDragChange(_ isDragging: Bool) {
         scratch.windowDragCleanupTask?.cancel()
         scratch.windowDragCleanupTask = nil
@@ -1128,6 +1188,7 @@ struct NotchController: View {
             && MusicManager.shared.title?.isEmpty == false
         if scratch.spacePlayPauseTapToken == nil {
             guard wantsTap else { return }
+            TextInputFocusTracker.shared.start()
             let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
                 | CGEventMask(1 << CGEventType.keyUp.rawValue)
             let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -1140,6 +1201,8 @@ struct NotchController: View {
                 let modifiers: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
                 guard event.flags.intersection(modifiers).isEmpty else { return .pass }
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier != ownPID else { return .pass }
+                // Typing in the notch (Notes, Blip, replies): the panel is key but Sapphire isn't frontmost.
+                guard !TextInputFocusTracker.isTextInputFocused else { return .pass }
                 if type == .keyDown, event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                     DispatchQueue.main.async { NotchController.toggleMusicPlayback() }
                 }
@@ -1195,6 +1258,12 @@ struct NotchController: View {
     }
 
     private func handleMeasuredClickSizeChange(_ newSize: CGSize) {
+        // A report can land after the panel closed. Left in the binding, it makes the next open's
+        // identical report a no-op, so the panel never sizes up.
+        if notchState != .clickExpanded, newSize != .zero {
+            measuredClickContentSize = .zero
+            return
+        }
         handleSizeChange(newSize, for: .clickExpanded)
     }
 
@@ -1293,7 +1362,9 @@ struct NotchController: View {
                 trailing: config.contentHorizontalPadding
             ),
             notchBandHeight: config.initialSize.height,
-            displayScale: notchWindow?.backingScaleFactor ?? 2
+            displayScale: notchWindow?.backingScaleFactor ?? 2,
+            isFloatingIsland: config.isFloatingIsland,
+            widgetRowWidthLimit: config.islandStacksWidgets ? WidgetLayoutPolicy.islandRowWidthLimit : 0
         )
     }
 
@@ -1513,6 +1584,10 @@ struct NotchController: View {
         case "navigateMusic": navigationStack.append(.musicPlayer)
         case "back": if navigationStack.count > 1 { navigationStack.removeLast() }
         #if DEBUG
+        // In-memory only: the open panel (and closed notch) use the Liquid Glass surface, like the
+        // default appearance with bottom fade on macOS 26, without touching the saved appearance.
+        case "panelGlass:on": Self.debugForcesGlassPanel = true
+        case "panelGlass:off": Self.debugForcesGlassPanel = false
         case "capsLockOn": liveActivityManager.debugSimulateCapsLock(true)
         case "capsLockOff": liveActivityManager.debugSimulateCapsLock(false)
         case "lockOn": (NSApp.delegate as? AppDelegate)?.debugSimulateLockScreen(true)
@@ -1542,7 +1617,28 @@ struct NotchController: View {
             } else {
                 settings.settings.perDisplayFloatingIsland[key] = action == "notchlessStyle:island"
             }
+        case "islandWidgets:stacked", "islandWidgets:row", "islandWidgets:default":
+            guard let screen = assignedScreen, !NotchConfiguration.hasHardwareNotch(on: screen) else { return }
+            let key = screen.displayIdentifier
+            if action == "islandWidgets:default" {
+                settings.settings.perDisplayFloatingIslandStyle.removeValue(forKey: key)
+            } else {
+                var style = settings.settings.value.resolvedFloatingIslandStyle(forDisplayID: key)
+                style.stackedWidgets = action == "islandWidgets:stacked"
+                settings.settings.perDisplayFloatingIslandStyle[key] = style
+            }
+        case let action? where action.hasPrefix("blip:"):
+            startDebugBlipTask(String(action.dropFirst("blip:".count)))
+        case let action? where action.hasPrefix("blipWith:"):
+            // blipWith:<backend raw value>:<prompt>, e.g. blipWith:Apple Intelligence:Open Calculator
+            let rest = action.dropFirst("blipWith:".count)
+            guard let colon = rest.firstIndex(of: ":"), let backend = LLMBackend(rawValue: String(rest[..<colon])) else { return }
+            startDebugBlipTask(String(rest[rest.index(after: colon)...]), backend: backend)
+        case "blipStop": (NSApp.delegate as? AppDelegate)?.intelligenceViewModel.stop()
         #endif
+        case "seamless:on": SeamlessModeManager.shared.setForcedActive(true)
+        case "seamless:off": SeamlessModeManager.shared.setForcedActive(false)
+        case "seamless:auto": SeamlessModeManager.shared.setForcedActive(nil)
         case "dumpLayers": dumpNotchLayerTree()
         case "dumpTracking": dumpTrackingAreas()
         case "snapshot": snapshotNotchWindow()
@@ -1552,6 +1648,24 @@ struct NotchController: View {
         default: break
         }
     }
+
+    #if DEBUG
+    /// Starts a Blip task with the configured backend (or `backend`), the same way the notch's Blip hub does.
+    /// Every display's controller receives the hook, so only the first one starts the run.
+    private func startDebugBlipTask(_ prompt: String, backend override: LLMBackend? = nil) {
+        let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, let vm = (NSApp.delegate as? AppDelegate)?.intelligenceViewModel, !vm.isRunning else { return }
+        let backend = override ?? settings.settings.intelligenceBackend
+        let apiKey = backend.resolveAPIKey(fallbackGeminiKey: settings.settings.geminiApiKey)
+        vm.taskInput = prompt
+        vm.run(apiKey: apiKey, backend: backend, geminiSpeedMode: settings.settings.intelligenceGeminiSpeedMode)
+        if vm.isRunning {
+            notchLog.notice("Debug Blip task started on \(backend.rawValue, privacy: .public): \(prompt, privacy: .public)")
+        } else {
+            notchLog.error("Debug Blip task not started (no usable backend, subscription or daily limit): \(prompt, privacy: .public)")
+        }
+    }
+    #endif
 
     private func snapshotNotchWindow() {
         guard let window = notchWindow,
@@ -1725,12 +1839,17 @@ struct NotchController: View {
             handleHover(hovering: false)
         }
         scratch.pendingHoverExit = exit
-        let grace = notchState == .clickExpanded ? Self.expandedHoverExitGrace : Self.hoverExitGrace
+        let releasedPressOutside = CACurrentMediaTime() - scratch.contentPressReleasedAt < 0.05
+        let grace = notchState != .clickExpanded ? Self.hoverExitGrace
+            : releasedPressOutside ? Self.pressReleaseHoverExitGrace
+            : Self.expandedHoverExitGrace
         DispatchQueue.main.asyncAfter(deadline: .now() + grace, execute: exit)
     }
 
     private static let hoverExitGrace: TimeInterval = 0.12
     private static let expandedHoverExitGrace: TimeInterval = 0.3
+    /// Time to come back after letting go of a slider dragged past the panel.
+    private static let pressReleaseHoverExitGrace: TimeInterval = 0.7
 
     private func handleHover(hovering: Bool) {
         guard !isManuallyHidden else { return }
@@ -1763,6 +1882,7 @@ struct NotchController: View {
             if activityType == .fileShelf, settings.settings.hoverToOpenFileShelf {
                 cancelHoverExpandTask()
                 if notchState != .clickExpanded {
+                    measuredClickContentSize = .zero
                     navigationStack = [.fileShelf]
                     notchState = .clickExpanded
                 }
@@ -1791,11 +1911,13 @@ struct NotchController: View {
                             guard settings.settings.expandOnHover else { return }
                             guard !self.isInteractiveLiveActivity else { return }
                             guard !self.shouldSuppressHoverExpansionForLiveActivity else { return }
+                            self.measuredClickContentSize = .zero
                             self.notchState = .clickExpanded
                         }
                     } else {
                         cancelHoverExpandTask()
                         guard !isInteractiveLiveActivity else { return }
+                        measuredClickContentSize = .zero
                         notchState = .clickExpanded
                     }
                 }
@@ -1859,10 +1981,15 @@ struct NotchController: View {
         }
 
         let previousState = notchState
-        notchState = newActivity != .none ? .autoExpanded : .initial
-        if previousState == notchState {
-            handleStateChange(from: notchState, to: notchState, refreshSize: false)
+        let nextState: NotchState = newActivity != .none ? .autoExpanded : .initial
+        if previousState == nextState {
+            handleStateChange(from: nextState, to: nextState, refreshSize: false)
             scratch.lastActivityShapeSignature = liveActivityManager.notchShapeSignature
+        } else {
+            // Handle the transition in the same view update that changes the state, instead of
+            // waiting for onChange(of: notchState) to start a second one.
+            scratch.inlineHandledTransition = (previousState, nextState, CACurrentMediaTime())
+            handleStateChange(from: previousState, to: nextState, commit: { notchState = nextState })
         }
         evaluateInactiveNotchVisibility()
     }
@@ -1872,9 +1999,15 @@ struct NotchController: View {
         evaluateInactiveNotchVisibility()
     }
 
-    private func handleStateChange(from oldState: NotchState, to newState: NotchState, refreshSize: Bool = true) {
-        guard let config = config else { return }
+    private func handleStateChange(
+        from oldState: NotchState,
+        to newState: NotchState,
+        refreshSize: Bool = true,
+        commit: (() -> Void)? = nil
+    ) {
+        guard let config = config else { commit?(); return }
         if isManuallyHidden {
+            commit?()
             animatedWidth = 0
             animatedHeight = 0
             setWindowHidden(true)
@@ -1899,6 +2032,7 @@ struct NotchController: View {
         }
 
         withAnimation(animation) {
+            commit?()
             updateRadiiForCurrentState(state: newState)
             self.liveActivityHorizontalPadding = liveActivityManager.activityHasBottomContent ?
             config.activityWithContentHorizontalPadding :
@@ -1906,10 +2040,15 @@ struct NotchController: View {
             if isContentUpdate && refreshSize {
                 refreshAnimatedSizeForCurrentState()
             }
+            if !isContentUpdate {
+                applyStateTransition(from: oldState, to: newState, config: config)
+            }
         }
+    }
 
-        if isContentUpdate { return }
-
+    /// Runs inside the state change's own transaction, so the radii, the render flags and the
+    /// size all land in one view update instead of one update each.
+    private func applyStateTransition(from oldState: NotchState, to newState: NotchState, config: ResolvedNotchConfiguration) {
         let transition = scratch.stateTransitionGeneration &+ 1
         scratch.stateTransitionGeneration = transition
 
@@ -1961,7 +2100,7 @@ struct NotchController: View {
 
             let fluidOut = wasShowingActivity && config.couplesContentToMorph && !reduceMotion
             let setsActivityEffect = wasShowingActivity && !reduceMotion && !fluidOut
-            withAnimation(idleMorphAnimation) {
+            do {
                 animatedWidth = config.initialSize.width; animatedHeight = config.initialSize.height
                 isPinned = false
             }
@@ -1994,7 +2133,7 @@ struct NotchController: View {
             let rawHeight = isLiveActivityActive ? measuredAutoContentSize.height * scale : config.hoverExpandedSize.height
             let target = snappedNotchTarget(width: rawWidth, height: rawHeight, config: config)
 
-            withAnimation(config.hoverAnimation) {
+            do {
                 animatedWidth = target.width; animatedHeight = target.height
             }
             effects.update(config.hoverAnimation) {
@@ -2011,7 +2150,7 @@ struct NotchController: View {
 
             if followsMorph, let size = scratch.expandedSizeByMode[currentMode] {
                 setClickContentLayoutSize(size)
-                withAnimation(self.expansionAnimation) {
+                do {
                     animatedWidth = size.width
                     animatedHeight = size.height
                 }
@@ -2023,10 +2162,7 @@ struct NotchController: View {
             }
             if followsMorph {
                 effects.update(self.expansionAnimation) { $0.shadowOpacity = 1 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
-                    guard self.notchState == .clickExpanded, self.scratch.stateTransitionGeneration == transition else { return }
-                    self.planeMorphDetached = true
-                }
+                if scratch.expandedSizeByMode[currentMode] != nil { schedulePlaneMorphDetach() }
             } else {
                 effects.update { $0.shadowOpacity = 0 }
             }
@@ -2079,14 +2215,14 @@ struct NotchController: View {
             }
             let animationToUse = isCollapsingFromClick ? config.collapseAnimation : config.activityToActivityAnimation
 
-            effects.update { $0.shadowOpacity = 0 }
+            effects.update(animationToUse) { $0.shadowOpacity = 0 }
 
             let target = snappedNotchTarget(
                 width: measuredAutoContentSize.width,
                 height: measuredAutoContentSize.height,
                 config: config
             )
-            withAnimation(animationToUse) {
+            do {
                 animatedWidth = target.width
                 animatedHeight = target.height
             }
@@ -2362,7 +2498,16 @@ struct NotchController: View {
 
             self.noteCollapseReason("direct in handleDragActivationChange")
             self.notchState = isLiveActivityActive ? .autoExpanded : .initial
+            // The zones view can outlive the collapse; stop feeding it the cursor so it shows no previews.
+            activeSnapZone = nil
+            notchDragLocationState.update(nil)
+            SnapPreviewManager.shared.hidePreview()
         }
+    }
+
+    /// Snap Zones are on screen, not just left on the navigation stack by a drag that moved away from the notch.
+    private var isShowingSnapZones: Bool {
+        navigationStack.last == .snapZones && notchState == .clickExpanded
     }
 
     private func handleWindowDragChange(isDragging: Bool) {
@@ -2418,6 +2563,7 @@ struct NotchController: View {
             navigationStack = [.fileShelfLanding]
         }
         if notchState != .clickExpanded {
+            measuredClickContentSize = .zero
             notchState = .clickExpanded
         }
     }
@@ -2439,6 +2585,7 @@ struct NotchController: View {
             let targetHeight = targetSize.height
             setClickContentLayoutSize(targetSize)
             scratch.expandedSizeByMode[currentMode] = targetSize
+            if config.couplesContentToMorph && !reduceMotion && !planeMorphDetached { schedulePlaneMorphDetach() }
             guard abs(targetWidth - animatedWidth) > 1 || abs(targetHeight - animatedHeight) > 1 else { return }
             withAnimation(self.expansionAnimation) {
                 animatedWidth = targetWidth
@@ -2464,6 +2611,18 @@ struct NotchController: View {
         guard abs(targetWidth - animatedWidth) > 1 else { return }
         withAnimation(self.expansionAnimation) {
             animatedWidth = targetWidth
+        }
+    }
+
+    private static let planeMorphDetachDelay: TimeInterval = 0.75
+
+    private func schedulePlaneMorphDetach() {
+        let transition = scratch.stateTransitionGeneration
+        guard scratch.planeMorphDetachTransition != transition else { return }
+        scratch.planeMorphDetachTransition = transition
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.planeMorphDetachDelay) {
+            guard self.notchState == .clickExpanded, self.scratch.stateTransitionGeneration == transition else { return }
+            self.planeMorphDetached = true
         }
     }
 
@@ -2841,7 +3000,10 @@ struct NotchController: View {
     // MARK: - Helper Methods
     private func startNotchInteractionMonitoring() {
         guard let window = notchWindow else { return }
-        (window as? DynamicFocusWindow)?.onMouseUp = { reevaluatePointerInteraction() }
+        (window as? DynamicFocusWindow)?.onMouseUp = {
+            scratch.contentPressReleasedAt = CACurrentMediaTime()
+            reevaluatePointerInteraction()
+        }
 
         let monitor = hoverMonitor ?? NotchHoverMonitor()
         hoverMonitor = monitor
@@ -2895,6 +3057,11 @@ struct NotchController: View {
             scratch.dragEndCollapseTask?.cancel()
             scratch.dragEndCollapseTask = nil
         }
+        // Dragging the panel's own content is never a window drag toward the snap zones.
+        if isHoldingContentPress {
+            dragManager.cancelActivation()
+            return
+        }
         if windowDrag.isDragging,
            settings.settings.snapOnWindowDragEnabled,
            !shouldSuppressSnapZoneActivation {
@@ -2911,20 +3078,25 @@ struct NotchController: View {
             dragManager.cancelActivation()
             return
         }
-        if isInside || scratch.isHandlingActiveWindowDrag || navigationStack.last == .snapZones {
+        if isInside || scratch.isHandlingActiveWindowDrag || isShowingSnapZones {
             updateNotchDragLocation(from: screenLocation)
         }
         guard settings.settings.snapDragEnabled else {
             dragManager.cancelActivation()
             return
         }
-        dragManager.updateDrag(
-            isInsideActivationZone: isInside || isNearNotchForSnapActivation(screenLocation)
-        )
+        // A window drag only counts once the cursor reaches the notch itself; the probe's frame and the wide
+        // file-drag outset fire while the window is still well below it.
+        let isInActivationZone = windowDrag.isNotchHintActive
+            ? isNearNotchForSnapActivation(screenLocation)
+            : isInside || isNearNotchForSnapActivation(screenLocation)
+        dragManager.updateDrag(isInsideActivationZone: isInActivationZone)
     }
 
     private static let snapActivationOutset = CGSize(width: 140, height: 70)
     private static let snapActivationRetainOutset = CGSize(width: 220, height: 130)
+    private static let windowDragActivationOutset = CGSize(width: 20, height: 6)
+    private static let windowDragActivationRetainOutset = CGSize(width: 50, height: 30)
 
     private func isNearNotchForSnapActivation(_ screenLocation: NSPoint) -> Bool {
         guard let window = notchWindow, let config else { return false }
@@ -2934,9 +3106,10 @@ struct NotchController: View {
         }
         let notchFrame = window.convertToScreen(interactiveFrame(for: window, config: config))
         guard !notchFrame.isEmpty else { return false }
+        let isWindowDrag = windowDrag.isNotchHintActive
         let outset = dragManager.isActivationPending
-            ? Self.snapActivationRetainOutset
-            : Self.snapActivationOutset
+            ? (isWindowDrag ? Self.windowDragActivationRetainOutset : Self.snapActivationRetainOutset)
+            : (isWindowDrag ? Self.windowDragActivationOutset : Self.snapActivationOutset)
         return notchFrame
             .insetBy(dx: -outset.width, dy: -outset.height)
             .contains(screenLocation)
@@ -2944,7 +3117,9 @@ struct NotchController: View {
 
     private func handleProbeMouseDragEnded(at screenLocation: NSPoint) {
         let finalLocation = updateNotchDragLocation(from: screenLocation)
-        let wasShowingSnapZones = navigationStack.last == .snapZones
+        // A drag that left the notch collapses the panel but keeps .snapZones on the stack; dropping then
+        // must not snap to a zone the user can no longer see.
+        let wasShowingSnapZones = isShowingSnapZones
         let finalSnapZone: SnapZone?
         if !wasShowingSnapZones {
             finalSnapZone = nil
@@ -3105,7 +3280,10 @@ struct NotchController: View {
             if !isPointerInside, notchState == .clickExpanded, scratch.widgetSwitchProtectionTask != nil {
                 return
             }
-            receivePointerHover(isPointerInside)
+            // A slider dragged past the panel keeps it open until the press ends.
+            if isPointerInside || !isHoldingContentPress {
+                receivePointerHover(isPointerInside)
+            }
         } else if isPointerInside, scratch.pendingHoverExit != nil {
             scratch.pendingHoverExit?.cancel()
             scratch.pendingHoverExit = nil
@@ -3266,7 +3444,14 @@ struct NotchController: View {
               (abs(targetWidth - animatedWidth) > epsilon || abs(targetHeight - animatedHeight) > epsilon) else { return }
 
         let currentActivityType = liveActivityManager.currentActivity
-        let isExemptFromBlur = reduceMotion
+        // Region activities stay pinned to the outline's edges while it resizes, and their
+        // switches have their own transition, so a width change from updating text (a
+        // counter, a percentage) must not blur the pill every time.
+        let resizesAsRegions: Bool = {
+            if case .standard = liveActivityManager.activityContent { return true }
+            return false
+        }()
+        let isExemptFromBlur = reduceMotion || resizesAsRegions
             || currentActivityType == .music || currentActivityType == .systemHUD
             || Date() < scratch.activitySwitchBlurWindowEnd
 

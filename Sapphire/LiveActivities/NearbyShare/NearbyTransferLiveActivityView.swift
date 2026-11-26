@@ -27,11 +27,12 @@ struct NearbyTransferLiveActivityView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
 
-                    Text(fileInfoText)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    MarqueeText(
+                        Text(fileInfoText)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    )
+                    .frame(maxWidth: 220, alignment: .leading)
                 }
 
                 actionView

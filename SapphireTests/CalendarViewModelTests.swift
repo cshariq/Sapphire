@@ -97,6 +97,27 @@ struct CalendarViewModelTests {
         #expect(viewModel.monthGrid.map(\.id) == originalGridIDs)
     }
 
+    @Test(arguments: [Day.sunday, Day.monday])
+    func monthGridPlacesDaysUnderTheirWeekdayColumn(startOfWeek: Day) {
+        let calendarSource = CalendarSource(timeZone: timeZone("America/Toronto"))
+        let clock = TestClock(date(2026, 10, 18, hour: 12, calendar: calendarSource.calendar))
+        let viewModel = InteractiveCalendarViewModel(
+            calendarStartOfWeek: startOfWeek,
+            calendar: { calendarSource.calendar },
+            now: { clock.currentDate() },
+            notificationCenter: NotificationCenter(),
+            workspaceNotificationCenter: NotificationCenter()
+        )
+        let calendar = calendarSource.calendar
+
+        #expect(viewModel.monthGrid.count == 42)
+        for (index, item) in viewModel.monthGrid.enumerated() {
+            let weekday = calendar.component(.weekday, from: item.date)
+            #expect((weekday - startOfWeek.firstWeekday + 7) % 7 == index % 7)
+        }
+        #expect(viewModel.monthGrid.first(where: \.isCurrentMonth)?.date == date(2026, 10, 1, calendar: calendar))
+    }
+
     @Test func mondayStartMonthGridPutsDatesUnderTheirWeekday() {
         let calendarSource = CalendarSource(timeZone: timeZone("Europe/Amsterdam"))
         let clock = TestClock(date(2026, 10, 18, hour: 12, calendar: calendarSource.calendar))

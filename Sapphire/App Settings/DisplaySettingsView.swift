@@ -323,6 +323,23 @@ private struct PerDisplaySettingsCard: View {
         }
         .padding()
         if isIsland {
+            HStack(spacing: 12) {
+                SettingsRowLabel(
+                    title: "Widget Layout",
+                    description: "Show the home widgets in one row, or stack them into a more compact card."
+                )
+                Spacer(minLength: 8)
+                Picker("", selection: islandStackedWidgetsBinding) {
+                    Text("Single Row").tag(false)
+                    Text("Stacked").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel("Island Widget Layout")
+            }
+            .padding([.horizontal, .bottom])
+
             Button {
                 withAnimation(.snappy) { showsIslandAdvanced.toggle() }
             } label: {
@@ -383,6 +400,17 @@ private struct PerDisplaySettingsCard: View {
                 .transition(.opacity)
             }
         }
+    }
+
+    private var islandStackedWidgetsBinding: Binding<Bool> {
+        Binding(
+            get: { settings.settings.value.resolvedFloatingIslandStyle(forDisplayID: displayID).stackedWidgets },
+            set: { newValue in
+                var style = settings.settings.value.resolvedFloatingIslandStyle(forDisplayID: displayID)
+                style.stackedWidgets = newValue
+                settings.settings.perDisplayFloatingIslandStyle[displayID] = style
+            }
+        )
     }
 
     private var hasIslandStyleOverride: Bool {

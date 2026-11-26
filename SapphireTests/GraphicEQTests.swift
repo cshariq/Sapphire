@@ -56,10 +56,39 @@ final class GraphicEQTests: XCTestCase {
         assertFollowsCurve(gains { $0 % 2 == 0 ? 6 : -6 }, tolerance: 0.5)
     }
 
-    func testPreampCancelsThePeakBoost() {
+    func testSteadyLevelPreCutCancelsThePeakBoost() {
+        let design = GraphicEQDesigner.design(gains: gains { _ in 12 }, bass: 0, sampleRate: rate)
+        XCTAssertEqual(20 * log10(design.preamp), -12, accuracy: 0.5)
+        XCTAssertEqual(design.headroomFloor, 1)
+        let cutOnly = GraphicEQDesigner.design(gains: gains { $0 == 17 ? -12 : 0 }, bass: 0, sampleRate: rate)
+        XCTAssertGreaterThan(20 * log10(cutOnly.preamp), -0.7)
+    }
+
+    func testDeviceTrimCutsEvenAFlatCurveSoEveryAppSharesOneLevel() {
+        let flat = GraphicEQDesigner.design(gains: AudioEQ.flat, bass: 0, sampleRate: rate, headroom: .raiseOutputVolume, trimDB: 6)
+        XCTAssertEqual(20 * log10(flat.preamp), -6, accuracy: 1e-9)
+        XCTAssertFalse(flat.isFlat)
+        let bigger = GraphicEQDesigner.design(gains: gains { _ in 12 }, bass: 0, sampleRate: rate, headroom: .raiseOutputVolume, trimDB: 6)
+        XCTAssertEqual(20 * log10(bigger.preamp), -12, accuracy: 0.5)
+    }
+
+    func testHeadroomFloorIsBoundedByThePeakBoost() {
         let plan = GraphicEQDesigner.plan(gains: gains { _ in 12 }, bass: 0, sampleRate: rate)
-        XCTAssertEqual(plan.preampDB, -12, accuracy: 0.5)
-        XCTAssertEqual(GraphicEQDesigner.plan(gains: gains { $0 == 17 ? -12 : 0 }, bass: 0, sampleRate: rate).preampDB, 0, accuracy: 0.6)
+        XCTAssertEqual(plan.peakBoostDB, 12, accuracy: 0.5)
+        let design = GraphicEQDesigner.design(gains: gains { _ in 12 }, bass: 0, sampleRate: rate, headroom: .adaptive)
+        XCTAssertEqual(20 * log10(design.headroomFloor), -13, accuracy: 0.5)
+        let cutOnly = GraphicEQDesigner.design(gains: gains { $0 == 17 ? -12 : 0 }, bass: 0, sampleRate: rate, headroom: .adaptive)
+        XCTAssertGreaterThan(20 * log10(cutOnly.headroomFloor), -1.7)
+    }
+
+    func testDesignSplitsCutsFromBoosts() {
+        let design = GraphicEQDesigner.design(gains: gains { $0 == 5 ? 9 : ($0 == 20 ? -9 : 0) }, bass: -4, sampleRate: rate)
+        XCTAssertFalse(design.boostSections[5].isIdentity)
+        XCTAssertTrue(design.cutSections[5].isIdentity)
+        XCTAssertFalse(design.cutSections[20].isIdentity)
+        XCTAssertTrue(design.boostSections[20].isIdentity)
+        XCTAssertFalse(design.cutSections[AudioEQ.bandCount].isIdentity)
+        XCTAssertTrue(design.boostSections[AudioEQ.bandCount].isIdentity)
     }
 
     func testBandsFarFromAnyChangeGetNoFilter() {
@@ -94,12 +123,80 @@ final class GraphicEQTests: XCTestCase {
     }
 
     func testBoostedBandReachesItsDesignedLevel() {
+        let steady = GraphicEQProcessor()
+        steady.post(GraphicEQDesigner.design(gains: gains { $0 == 17 ? 12 : 0 }, bass: 0, sampleRate: rate))
+        var buffer = sine(1000, frames: 24000)
+        buffer.withUnsafeMutableBufferPointer { steady.process($0.baseAddress!, frames: 24000) }
+        XCTAssertEqual(Double(buffer.suffix(4800).map(abs).max() ?? 0), 0.1, accuracy: 0.01)
+
+        let adaptive = GraphicEQProcessor()
+        adaptive.post(GraphicEQDesigner.design(gains: gains { $0 == 17 ? 12 : 0 }, bass: 0, sampleRate: rate, headroom: .adaptive))
+        buffer = sine(1000, frames: 24000)
+        buffer.withUnsafeMutableBufferPointer { adaptive.process($0.baseAddress!, frames: 24000) }
+        XCTAssertEqual(Double(buffer.suffix(4800).map(abs).max() ?? 0), 0.1 * pow(10, 12.0 / 20), accuracy: 0.01)
+        XCTAssertEqual(adaptive.currentHeadroomGain, 1)
+    }
+
+    private func processHot(_ processor: GraphicEQProcessor, amplitude: Float, frames: Int = 48000) -> [Float] {
+        var buffer = sine(1000, frames: frames, amplitude: amplitude)
+        buffer.withUnsafeMutableBufferPointer { pointer in
+            for block in 0..<(frames / 480) { processor.process(pointer.baseAddress! + block * 960, frames: 480) }
+        }
+        return buffer
+    }
+
+    func testSteadyLevelNeverRidesTheLevelOnHotInput() {
         let processor = GraphicEQProcessor()
         processor.post(GraphicEQDesigner.design(gains: gains { $0 == 17 ? 12 : 0 }, bass: 0, sampleRate: rate))
-        var buffer = sine(1000, frames: 24000)
-        buffer.withUnsafeMutableBufferPointer { processor.process($0.baseAddress!, frames: 24000) }
-        let tailPeak = buffer.suffix(4800).map(abs).max() ?? 0
-        XCTAssertEqual(Double(tailPeak), 0.1, accuracy: 0.01)
+        let buffer = processHot(processor, amplitude: 0.9)
+        XCTAssertEqual(processor.currentHeadroomGain, 1)
+        XCTAssertEqual(processor.currentBoostDepth, 1)
+        let peaks = stride(from: 4800, to: 48000, by: 4800).map { start in buffer[(start * 2)..<((start + 4800) * 2)].map(abs).max() ?? 0 }
+        XCTAssertLessThan((peaks.max() ?? 0) - (peaks.min() ?? 0), 1e-4)
+        XCTAssertEqual(Double(peaks.max() ?? 0), 0.9, accuracy: 0.01)
+    }
+
+    func testHotBoostShrinksInsteadOfTurningTheTrackDown() {
+        let processor = GraphicEQProcessor()
+        processor.post(GraphicEQDesigner.design(gains: gains { $0 == 17 ? 12 : 0 }, bass: 0, sampleRate: rate, headroom: .adaptive))
+        let buffer = processHot(processor, amplitude: 0.5)
+        let tailPeak = Double(buffer.suffix(9600).map(abs).max() ?? 0)
+        XCTAssertLessThanOrEqual(tailPeak, GraphicEQProcessor.headroomCeiling + 1e-4)
+        XCTAssertGreaterThan(tailPeak, 0.9)
+        XCTAssertEqual(processor.currentHeadroomGain, 1)
+        XCTAssertLessThan(processor.currentBoostDepth, 0.5)
+        XCTAssertGreaterThan(processor.currentBoostDepth, GraphicEQProcessor.minimumBoostDepth)
+    }
+
+    func testLevelOnlyDropsOnceTheBoostIsAtItsMinimumDepth() {
+        let processor = GraphicEQProcessor()
+        processor.post(GraphicEQDesigner.design(gains: gains { $0 == 17 ? 12 : 0 }, bass: 0, sampleRate: rate, headroom: .adaptive))
+        let buffer = processHot(processor, amplitude: 0.9)
+        XCTAssertEqual(processor.currentBoostDepth, GraphicEQProcessor.minimumBoostDepth, accuracy: 1e-9)
+        XCTAssertLessThan(processor.currentHeadroomGain, 0.8)
+        XCTAssertLessThanOrEqual(Double(buffer.suffix(9600).map(abs).max() ?? 0), GraphicEQProcessor.headroomCeiling + 1e-4)
+    }
+
+    func testHeadroomComesBackOnceTheBoostIsRemoved() {
+        let processor = GraphicEQProcessor()
+        processor.post(GraphicEQDesigner.design(gains: gains { $0 == 17 ? 12 : 0 }, bass: 0, sampleRate: rate, headroom: .adaptive))
+        _ = processHot(processor, amplitude: 0.9, frames: 9600)
+        XCTAssertLessThan(processor.currentHeadroomGain, 0.8)
+        XCTAssertLessThan(processor.currentBoostDepth, 1)
+
+        processor.post(.flat)
+        var quiet = sine(1000, frames: 48000)
+        quiet.withUnsafeMutableBufferPointer { pointer in
+            for block in 0..<100 { processor.process(pointer.baseAddress! + block * 960, frames: 480) }
+        }
+        XCTAssertEqual(processor.currentHeadroomGain, 1)
+        XCTAssertEqual(processor.currentBoostDepth, 1)
+
+        var silence = [Float](repeating: 0, count: 2 * 48000)
+        silence.withUnsafeMutableBufferPointer { pointer in
+            for block in 0..<100 { processor.process(pointer.baseAddress! + block * 960, frames: 480) }
+        }
+        XCTAssertTrue(processor.isTransparent)
     }
 
     func testDesignChangesGlideWithoutClicks() {
@@ -120,6 +217,27 @@ final class GraphicEQTests: XCTestCase {
         }
         var worst: Float = 0
         for frame in 2..<frames {
+            worst = max(worst, abs(buffer[frame * 2] - 2 * buffer[(frame - 1) * 2] + buffer[(frame - 2) * 2]))
+        }
+        XCTAssertLessThan(worst, 0.002)
+    }
+
+    func testBandFlippingFromBoostToCutWhileShrunkGlidesWithoutClicks() {
+        let processor = GraphicEQProcessor()
+        let frames = 96000
+        var buffer = sine(60, frames: frames, amplitude: 0.6)
+        buffer.withUnsafeMutableBufferPointer { pointer in
+            for block in 0..<(frames / 480) {
+                if block == 0 { processor.post(GraphicEQDesigner.design(gains: gains { $0 == 5 ? 12 : 0 }, bass: 0, sampleRate: rate, headroom: .adaptive)) }
+                if block == 50 {
+                    XCTAssertLessThan(processor.currentBoostDepth, 1)
+                    processor.post(GraphicEQDesigner.design(gains: gains { $0 == 5 ? -12 : 0 }, bass: 0, sampleRate: rate, headroom: .adaptive))
+                }
+                processor.process(pointer.baseAddress! + block * 960, frames: 480)
+            }
+        }
+        var worst: Float = 0
+        for frame in 12000..<frames {
             worst = max(worst, abs(buffer[frame * 2] - 2 * buffer[(frame - 1) * 2] + buffer[(frame - 2) * 2]))
         }
         XCTAssertLessThan(worst, 0.002)

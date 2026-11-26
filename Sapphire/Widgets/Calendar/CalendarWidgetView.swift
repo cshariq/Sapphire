@@ -27,6 +27,7 @@ struct CalendarWidgetView: View {
 
     @State private var hasScrolledInitially = false
     @State private var centeredDate: Date?
+    @State private var ignoreScrollSelectionUntil = Date.distantPast
 
     private var combinedScheduleItems: [ScheduleItem] {
         let events = calendarService.eventsForSelectedDate.compactMap { event -> ScheduleItem? in
@@ -102,49 +103,79 @@ struct CalendarWidgetView: View {
         GeometryReader { containerProxy in
             let itemWidth: CGFloat = 28
             let itemSpacing: CGFloat = 10
-            let horizontalPadding = (containerProxy.size.width / 2) - (itemWidth / 2)
+            let containerWidth = containerProxy.size.width
+            let horizontalPadding = max(0, (containerWidth / 2) - (itemWidth / 2))
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: itemSpacing) {
-                    ForEach(viewModel.dates, id: \.self) { date in
-                        DynamicDayView(
-                            date: date,
-                            containerWidth: containerProxy.size.width
-                        )
-                        .id(date)
-                        .onTapGesture {
-                            HapticManager.shared.perform(HapticFeedbackType.medium)
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                                viewModel.selectDate(date)
-                                centeredDate = date
+            ScrollViewReader { scrollProxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: itemSpacing) {
+                        ForEach(viewModel.dates, id: \.self) { date in
+                            DynamicDayView(
+                                date: date,
+                                containerWidth: containerProxy.size.width
+                            )
+                            .id(date)
+                            .onTapGesture {
+                                HapticManager.shared.perform(HapticFeedbackType.medium)
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                    viewModel.selectDate(date)
+                                    centeredDate = date
+                                }
                             }
                         }
                     }
+                    .scrollTargetLayout()
                 }
-                .scrollTargetLayout()
-            }
-            // Content margins, not padding: scrollPosition ignores padding and centered the strip two days early.
-            .contentMargins(.horizontal, horizontalPadding, for: .scrollContent)
-            .coordinateSpace(.calendarStrip)
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $centeredDate, anchor: .center)
-            .onAppear {
-                DispatchQueue.main.async {
-                    centeredDate = viewModel.today
-                    hasScrolledInitially = true
+                // Inset with content margins, not padding on the stack: scroll-to-id and view-aligned
+                // snapping ignore padding outside the scroll target layout, so the strip opened and
+                // snapped with the centred day two cells before the selected one (issues #205, #215).
+                .contentMargins(.horizontal, horizontalPadding, for: .scrollContent)
+                .coordinateSpace(DynamicDayView.stripSpace)
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $centeredDate, anchor: .center)
+                .onAppear {
+                    if !viewModel.selectedDate.isSameDay(as: viewModel.today) {
+                        viewModel.selectDate(viewModel.today)
+                    }
+                    recenter(on: viewModel.today, using: scrollProxy)
                 }
-            }
-            .onChange(of: centeredDate) { _, newDate in
-                guard hasScrolledInitially, let newDate,
-                      !newDate.isSameDay(as: viewModel.selectedDate) else { return }
-                HapticManager.shared.perform(HapticFeedbackType.weak)
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    viewModel.selectDate(newDate)
+                // The margins depend on the width: keep the selected day centred if the strip resizes.
+                .onChange(of: containerWidth) { _, _ in
+                    recenter(on: viewModel.selectedDate, using: scrollProxy)
+                }
+                // Selection changed elsewhere (detail view, day rollover): follow it.
+                .onChange(of: viewModel.selectedDate) { _, newDate in
+                    guard !(centeredDate?.isSameDay(as: newDate) ?? false) else { return }
+                    recenter(on: newDate, using: scrollProxy)
+                }
+                .onChange(of: centeredDate) { _, newDate in
+                    guard hasScrolledInitially, Date() >= ignoreScrollSelectionUntil, let newDate,
+                          !newDate.isSameDay(as: viewModel.selectedDate) else { return }
+                    HapticManager.shared.perform(HapticFeedbackType.weak)
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.selectDate(newDate)
+                    }
                 }
             }
         }
         // Tall enough for the centred day at full size; the scroll view clips anything taller.
         .frame(height: 42)
+    }
+
+    /// Scrolls `date` to the centre without letting the resulting position updates
+    /// (or layout passes around them) count as a user scroll.
+    private func recenter(on date: Date, using scrollProxy: ScrollViewProxy) {
+        guard let target = viewModel.dates.first(where: { $0.isSameDay(as: date) }) else { return }
+        ignoreScrollSelectionUntil = Date().addingTimeInterval(0.35)
+        DispatchQueue.main.async {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                scrollProxy.scrollTo(target, anchor: .center)
+                centeredDate = target
+            }
+            hasScrolledInitially = true
+        }
     }
 
     @ViewBuilder
@@ -276,14 +307,13 @@ struct DynamicDayView: View {
         return Color(red: Double(resolved.red), green: Double(resolved.green), blue: Double(resolved.blue))
     }
 
+    /// Named on the strip's scroll view, so x is measured from its visible leading edge.
+    /// (`.scrollView` space starts at the leading content margin instead.)
+    static let stripSpace = NamedCoordinateSpace.named("CalendarDayStrip")
+
     private static func focusFactor(_ proxy: GeometryProxy, centerX: CGFloat) -> CGFloat {
-        let distance = proxy.frame(in: .calendarStrip).midX - centerX
+        let distance = proxy.frame(in: stripSpace).midX - centerX
         return max(0, 1 - (abs(distance) / 80))
     }
 
-}
-
-// The scroll view's own space shifts by its content margins; this one stays on the visible strip.
-private extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
-    static var calendarStrip: NamedCoordinateSpace { .named("CalendarStripCoordinateSpace") }
 }

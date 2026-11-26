@@ -24,8 +24,15 @@ final class WindowDragState: ObservableObject {
     @Published private(set) var isSnapZoneDismissedForCurrentDrag = false
     @Published private(set) var isSnapZoneBypassModifierPressed = false
     @Published private(set) var cursorDisplayID: CGDirectDisplayID?
+    /// A window is being dragged while only "Activate on Drag" is on: the notch shows a hint to drag it up there.
+    @Published private(set) var isNotchHintActive = false
+    /// The first few hint drags also show the "drag up to snap" live activity; later ones only light the notch's edge.
+    @Published private(set) var showsNotchHintActivity = false
+    static let notchHintActivityLimit = 3
+    private static let notchHintActivityCountKey = "snapDragHintActivityShownCount"
     private var modifierFlagsMonitorToken: UUID?
     private var dragPollingTimer: Timer?
+    private var notchHintTimer: Timer?
     private init() {}
 
     func beginDrag(
@@ -37,6 +44,34 @@ final class WindowDragState: ObservableObject {
         updateCursorDisplay()
         startModifierFlagsMonitoring()
         startDragPolling()
+    }
+
+    func beginNotchHint() {
+        guard !isNotchHintActive else { return }
+        let shownCount = UserDefaults.standard.integer(forKey: Self.notchHintActivityCountKey)
+        showsNotchHintActivity = shownCount < Self.notchHintActivityLimit
+        if showsNotchHintActivity {
+            UserDefaults.standard.set(shownCount + 1, forKey: Self.notchHintActivityCountKey)
+        }
+        isNotchHintActive = true
+        // Backstop for a missed mouse-up; runs only while the hint is up.
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+                self?.endNotchHint()
+            }
+        }
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        notchHintTimer = timer
+    }
+
+    func endNotchHint() {
+        notchHintTimer?.invalidate()
+        notchHintTimer = nil
+        guard isNotchHintActive else { return }
+        isNotchHintActive = false
+        showsNotchHintActivity = false
     }
 
     func dismissSnapZonesForCurrentDrag() {
@@ -137,6 +172,7 @@ class ActiveAppMonitor: ObservableObject {
 
     private init() {
         self.settingsModel = SettingsModel.shared
+        InputAppIdentityCache.shared.start()
 
         let spaceChangePublisher = NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification).map { _ in "activeSpaceDidChange" }
         let appChangePublisher = NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification).map { _ in "didActivateApplication" }
@@ -162,7 +198,7 @@ class ActiveAppMonitor: ObservableObject {
             .store(in: &cancellables)
 
         settingsModel.$settings
-            .map(\.snapOnWindowDragEnabled)
+            .map(ActiveAppMonitor.observesWindowDrags)
             .removeDuplicates()
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -175,7 +211,9 @@ class ActiveAppMonitor: ObservableObject {
     private func updateActiveAppState(reason: String) {
         refreshFullScreenState(reason: reason)
 
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication, let bundleID = frontmostApp.bundleIdentifier else {
+        // The cache reuses the activation notification's instance; a fresh
+        // `NSWorkspace.frontmostApplication` costs two LaunchServices round trips per switch.
+        guard let frontmostApp = InputAppIdentityCache.shared.frontmostApplication, let bundleID = frontmostApp.bundleIdentifier else {
             if activeAppBundleID != nil { activeAppBundleID = nil }
             teardownAXObserver()
             return
@@ -226,13 +264,12 @@ class ActiveAppMonitor: ObservableObject {
             hasLoggedUntrustedAccessibility = false
         }
 
-        let summary = evaluation.displays.map(\.logDescription).joined(separator: "; ")
-        fullScreenLog.info("Evaluated reason=\(reason, privacy: .public) displays=[\(summary, privacy: .public)]")
-
+        // Runs on every app switch; log only when the result changes.
         guard fullScreenDisplayIDs != evaluation.displayIDs else { return }
         let previous = Self.describe(fullScreenDisplayIDs)
         let current = Self.describe(evaluation.displayIDs)
-        fullScreenLog.notice("Full-screen displays changed [\(previous, privacy: .public)] -> [\(current, privacy: .public)] reason=\(reason, privacy: .public)")
+        let summary = evaluation.displays.map(\.logDescription).joined(separator: "; ")
+        fullScreenLog.notice("Full-screen displays changed [\(previous, privacy: .public)] -> [\(current, privacy: .public)] reason=\(reason, privacy: .public) displays=[\(summary, privacy: .public)]")
         fullScreenDisplayIDs = evaluation.displayIDs
     }
 
@@ -287,7 +324,7 @@ class ActiveAppMonitor: ObservableObject {
         teardownAXObserver()
         observedPID = pid
 
-        guard settingsModel.current.snapOnWindowDragEnabled else { return }
+        guard Self.observesWindowDrags(settingsModel.current) else { return }
 
         let observer = AXObserverHandle(pid: pid) { _, _ in
             ActiveAppMonitor.shared.handleWindowMoved()
@@ -302,12 +339,18 @@ class ActiveAppMonitor: ObservableObject {
         self.axObserver = observer
     }
 
+    /// Window moves are watched for the window-drag trigger and, with only "Activate on Drag" on, for the notch hint.
+    nonisolated static func observesWindowDrags(_ settings: Settings) -> Bool {
+        settings.snapOnWindowDragEnabled || settings.snapDragEnabled
+    }
+
     private func teardownAXObserver() {
         axObserver?.detach()
         axObserver = nil
         observedPID = nil
         dragActivationTimer?.invalidate()
         dragActivationTimer = nil
+        windowDrag.endNotchHint()
 
         if let token = mouseUpToken {
             EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
@@ -327,6 +370,7 @@ class ActiveAppMonitor: ObservableObject {
 
             guard NSEvent.pressedMouseButtons & 1 != 0,
                   !self.windowDrag.isDragging,
+                  !self.windowDrag.isNotchHintActive,
                   self.dragActivationTimer == nil else { return }
 
             self.startMouseUpMonitoring()
@@ -339,7 +383,12 @@ class ActiveAppMonitor: ObservableObject {
                     // A plain click can post AXWindowMoved too (e.g. closing a Chrome tab), so the cursor must have moved.
                     guard NSEvent.pressedMouseButtons & 1 != 0,
                           hypot(location.x - origin.x, location.y - origin.y) >= 3 else { return }
-                    self.windowDrag.beginDrag()
+                    let settings = self.settingsModel.current
+                    if settings.snapOnWindowDragEnabled {
+                        self.windowDrag.beginDrag()
+                    } else if settings.snapDragEnabled {
+                        self.windowDrag.beginNotchHint()
+                    }
                 }
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -356,6 +405,7 @@ class ActiveAppMonitor: ObservableObject {
                 self.dragActivationTimer?.invalidate()
                 self.dragActivationTimer = nil
                 self.windowDrag.endDrag()
+                self.windowDrag.endNotchHint()
                 if let token = self.mouseUpToken {
                     EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
                     self.mouseUpToken = nil

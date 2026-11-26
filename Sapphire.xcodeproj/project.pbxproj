@@ -7,8 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A0C100000000000000002001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A0C100000000000000002002 /* Localizable.xcstrings */; };
 		3EA625D8CDF343379815DBE6 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 350EC0B0ACC04131989F6CB6 /* FirebaseAppCheck */; };
+		5AAE00000000000000000010 /* ShareBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AAE00000000000000000002 /* ShareBridge.swift */; };
+		5AAE00000000000000000011 /* ContinuityShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AAE00000000000000000003 /* ContinuityShareViewController.swift */; };
+		5AAE00000000000000000014 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5AAE00000000000000000013 /* Localizable.xcstrings */; };
+		5AAE00000000000000000016 /* ContinuityShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AAE00000000000000000015 /* ContinuityShareViewController.swift */; };
+		5AAE00000000000000000012 /* SapphireShare.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = 5AAE00000000000000000001 /* SapphireShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A0C100000000000000002001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A0C100000000000000002002 /* Localizable.xcstrings */; };
 		A17D00000000000000000007 /* SapphireAndroidWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17D00000000000000000003 /* SapphireAndroidWidgets.swift */; };
 		A17D00000000000000000008 /* AndroidWidgetSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17D00000000000000000006 /* AndroidWidgetSnapshotStore.swift */; };
 		A17D00000000000000000009 /* SapphireAndroidWidgets.appex in Embed Widget Extensions */ = {isa = PBXBuildFile; fileRef = A17D00000000000000000001 /* SapphireAndroidWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -145,13 +150,13 @@
 		DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */ = {isa = PBXBuildFile; fileRef = DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F1CE00000000000000001AA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000002AA /* main.swift */; };
 		F1CE00000000000000002AA /* SapphireFinderSync.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000001AA /* SapphireFinderSync.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		F2DE000000000000000020BB /* Public FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000021BB /* Public FileProviderExtension.swift */; };
 		F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000002BB /* FileProviderExtension.swift */; };
 		F2DE000000000000000014BB /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000003BB /* FileProviderItem.swift */; };
 		F2DE000000000000000015BB /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000004BB /* FileProviderEnumerator.swift */; };
 		F2DE000000000000000016BB /* HostConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000005BB /* HostConnection.swift */; };
 		F2DE000000000000000017BB /* ContinuityFileProviderShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000006BB /* ContinuityFileProviderShared.swift */; };
 		F2DE000000000000000018BB /* SapphireFileProvider.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000001BB /* SapphireFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F2DE000000000000000020BB /* Public FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000021BB /* Public FileProviderExtension.swift */; };
 		F3A600000000000000000003 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = F3A600000000000000000002 /* Yams */; };
 		F4C6BD0940E54C6EBC832604 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = FD831867A2F947938E17E286 /* FirebaseFirestore */; };
 		F5A1000230F0000000000001 /* FirebaseInstallations in Frameworks */ = {isa = PBXBuildFile; productRef = F5A1000130F0000000000001 /* FirebaseInstallations */; };
@@ -159,6 +164,20 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		5AAE0000000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5AAE00000000000000000007;
+			remoteInfo = SapphireShare;
+		};
+		A0C100000000000000001001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DA46CF752DCBCA0000F00EC5;
+			remoteInfo = Sapphire;
+		};
 		A17D0000000000000000000F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
@@ -215,29 +234,25 @@
 			remoteGlobalIDString = F2DE00000000000000000ABB;
 			remoteInfo = SapphireFileProvider;
 		};
-		A0C100000000000000001001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DA46CF752DCBCA0000F00EC5;
-			remoteInfo = Sapphire;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		A17D0000000000000000000D /* Embed Widget Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolder = PlugIns;
+			dstSubfolderSpec = 13;
 			files = (
 				A17D00000000000000000009 /* SapphireAndroidWidgets.appex in Embed Widget Extensions */,
 			);
 			name = "Embed Widget Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C0DE40000000000000000001 /* Embed iDevice Tools */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = libimobiledevice/bin;
-			dstSubfolder = Resources;
+			dstSubfolderSpec = 7;
 			files = (
 				C0DE20000000000000000001 /* comptest in Embed iDevice Tools */,
 				C0DE20000000000000000002 /* idevice_id in Embed iDevice Tools */,
@@ -246,11 +261,13 @@
 				C0DE20000000000000000005 /* wificonnection in Embed iDevice Tools */,
 			);
 			name = "Embed iDevice Tools";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C0DE40000000000000000002 /* Embed iDevice Libraries */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = libimobiledevice/lib;
-			dstSubfolder = Resources;
+			dstSubfolderSpec = 7;
 			files = (
 				C0DE20000000000000000006 /* libcrypto.3.dylib in Embed iDevice Libraries */,
 				C0DE20000000000000000007 /* libimobiledevice-1.0.6.dylib in Embed iDevice Libraries */,
@@ -260,80 +277,105 @@
 				C0DE2000000000000000000B /* libusbmuxd-2.0.6.dylib in Embed iDevice Libraries */,
 			);
 			name = "Embed iDevice Libraries";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE100000000000000012AA /* Embed System Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = Contents/Library/SystemExtensions;
-			dstSubfolder = Wrapper;
+			dstSubfolderSpec = 1;
 			files = (
 				CAFE100000000000000013AA /* SapphireCameraExtension.systemextension in Embed System Extensions */,
 			);
 			name = "Embed System Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE20000000000000000FBB /* Embed Audio Driver */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = Contents/Resources;
-			dstSubfolder = Wrapper;
+			dstSubfolderSpec = 1;
 			files = (
 				CAFE200000000000000010BB /* SapphireAudioDriver.driver in Embed Audio Driver */,
 			);
 			name = "Embed Audio Driver";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA262B242EA942750027CA69 /* Embed Helper Executable */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolder = Executables;
+			dstSubfolderSpec = 6;
 			files = (
 				DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in Embed Helper Executable */,
 			);
 			name = "Embed Helper Executable";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAA7D9D22E8633B20032748B /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
+			dstSubfolderSpec = 0;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
 		DABFA98B2EBFBA35000C5A8B /* Embed Helper LaunchDaemon Plist */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = Contents/Library/LaunchDaemons;
-			dstSubfolder = Wrapper;
+			dstSubfolderSpec = 1;
 			files = (
 			);
 			name = "Embed Helper LaunchDaemon Plist";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAE70B782E12300B001F0890 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolder = Frameworks;
+			dstSubfolderSpec = 10;
 			files = (
 				DACBB01D2E20321D00740C9B /* libNearbyShare.dylib in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAF7D8AC2E207C5100AB0820 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolder = Frameworks;
+			dstSubfolderSpec = 10;
 			files = (
 				DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F1CE00000000000000003AA /* Embed Finder Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolder = PlugIns;
+			dstSubfolderSpec = 13;
 			files = (
 				F1CE00000000000000002AA /* SapphireFinderSync.appex in Embed Finder Extensions */,
+				5AAE00000000000000000012 /* SapphireShare.appex in Embed Finder Extensions */,
 				F2DE000000000000000018BB /* SapphireFileProvider.appex in Embed Finder Extensions */,
 			);
 			name = "Embed Finder Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5AAE00000000000000000001 /* SapphireShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SapphireShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		5AAE00000000000000000002 /* ShareBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareBridge.swift; sourceTree = "<group>"; };
+		5AAE00000000000000000003 /* ContinuityShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuityShareViewController.swift; sourceTree = "<group>"; };
+		5AAE00000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		5AAE00000000000000000005 /* SapphireShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireShare.entitlements; sourceTree = "<group>"; };
+		5AAE00000000000000000013 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		5AAE00000000000000000015 /* ContinuityShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContinuityShareViewController.swift; path = PublicExtensionStubs/Share/ContinuityShareViewController.swift; sourceTree = SOURCE_ROOT; };
+		A0C100000000000000001002 /* SapphireLocalizationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireLocalizationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0C100000000000000002002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		A17D00000000000000000001 /* SapphireAndroidWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SapphireAndroidWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A17D00000000000000000003 /* SapphireAndroidWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SapphireAndroidWidgets.swift; sourceTree = "<group>"; };
@@ -489,7 +531,6 @@
 		F1CE000000000000000004AA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F1CE000000000000000005AA /* SapphireFinderSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireFinderSync.entitlements; sourceTree = "<group>"; };
 		F2DE000000000000000001BB /* SapphireFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SapphireFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		F2DE000000000000000021BB /* Public FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Public FileProviderExtension.swift"; path = PublicExtensionStubs/FileProvider/FileProviderExtension.swift; sourceTree = SOURCE_ROOT; };
 		F2DE000000000000000002BB /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		F2DE000000000000000003BB /* FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItem.swift; sourceTree = "<group>"; };
 		F2DE000000000000000004BB /* FileProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderEnumerator.swift; sourceTree = "<group>"; };
@@ -498,7 +539,7 @@
 		F2DE000000000000000007BB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F2DE000000000000000008BB /* SapphireFileProvider.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireFileProvider.entitlements; sourceTree = "<group>"; };
 		F2DE000000000000000019BB /* PhoneDrive.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = PhoneDrive.icns; sourceTree = "<group>"; };
-		A0C100000000000000001002 /* SapphireLocalizationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireLocalizationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F2DE000000000000000021BB /* Public FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Public FileProviderExtension.swift"; path = PublicExtensionStubs/FileProvider/FileProviderExtension.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -569,6 +610,11 @@
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A0C100000000000000001003 /* SapphireLocalizationTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SapphireLocalizationTests;
+			sourceTree = "<group>";
+		};
 		DA183FC92E122AF30056667D /* Sapphire */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -617,37 +663,55 @@
 			path = abt;
 			sourceTree = "<group>";
 		};
-		A0C100000000000000001003 /* SapphireLocalizationTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SapphireLocalizationTests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A17D0000000000000000000A /* Frameworks */ = {
+		5AAE0000000000000000000A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A0C100000000000000001004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A17D0000000000000000000A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE10000000000000000CAA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE200000000000000008BB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				CAFE200000000000000013BB /* CoreAudio.framework in Frameworks */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA452EAC2EAA57C90070E5C9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF732DCBCA0000F00EC5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				F3A600000000000000000003 /* Yams in Frameworks */,
 				DA8FB0482E7CBE9400C9BD1A /* IMSharedUtilities.framework in Frameworks */,
@@ -675,43 +739,61 @@
 				DA5E100A304CBB63003D1D37 /* FirebaseAnalytics in Frameworks */,
 				DA8FB0512E7D898F00C9BD1A /* MobileTimer.framework in Frameworks */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF842DCBCA0100F00EC5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA7C497E2E15CCA50049937A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				DACA66622E8B70E60056ED60 /* QRCode in Frameworks */,
 				DA7C49A52E15D34D0049937A /* SwiftECC in Frameworks */,
 				DA7C49A82E15D3660049937A /* SwiftProtobuf in Frameworks */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAA7D9D12E8633B20032748B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F1CE000000000000000006AA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F2DE00000000000000000FBB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
-		};
-		A0C100000000000000001004 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			files = (
-			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		5AAE00000000000000000006 /* SapphireShare */ = {
+			isa = PBXGroup;
+			children = (
+				5AAE00000000000000000002 /* ShareBridge.swift */,
+				5AAE00000000000000000003 /* ContinuityShareViewController.swift */,
+				5AAE00000000000000000004 /* Info.plist */,
+				5AAE00000000000000000005 /* SapphireShare.entitlements */,
+				5AAE00000000000000000013 /* Localizable.xcstrings */,
+			);
+			path = SapphireShare;
+			sourceTree = "<group>";
+		};
 		A17D00000000000000000002 /* SapphireAndroidWidgets */ = {
 			isa = PBXGroup;
 			children = (
@@ -764,6 +846,7 @@
 				CAFE100000000000000003AA /* main.swift */,
 				CAFE1000000000000000A0AA /* main.swift */,
 				CAFE0000000000000000A0CC /* Extensions.xcconfig */,
+				5AAE00000000000000000015 /* ContinuityShareViewController.swift */,
 				CAFE100000000000000004AA /* SapphireCameraProvider.swift */,
 				CAFE10000000000000000AAA /* SapphireCameraIdentifiers.swift */,
 				CAFE100000000000000005AA /* Info.plist */,
@@ -794,6 +877,7 @@
 				A17D00000000000000000002 /* SapphireAndroidWidgets */,
 				C0DE30000000000000000001 /* libimobiledevice */,
 				F1CE000000000000000007AA /* SapphireFinderSync */,
+				5AAE00000000000000000006 /* SapphireShare */,
 				F2DE000000000000000009BB /* SapphireFileProvider */,
 				DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */,
 				A0C100000000000000001003 /* SapphireLocalizationTests */,
@@ -821,6 +905,7 @@
 			children = (
 				A17D00000000000000000001 /* SapphireAndroidWidgets.appex */,
 				F1CE000000000000000001AA /* SapphireFinderSync.appex */,
+				5AAE00000000000000000001 /* SapphireShare.appex */,
 				F2DE000000000000000001BB /* SapphireFileProvider.appex */,
 				DA46CF762DCBCA0000F00EC5 /* Sapphire.app */,
 				DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */,
@@ -1085,12 +1170,52 @@
 /* Begin PBXHeadersBuildPhase section */
 		DA7C497C2E15CCA50049937A /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
+		5AAE00000000000000000007 /* SapphireShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5AAE00000000000000000008 /* Build configuration list for PBXNativeTarget "SapphireShare" */;
+			buildPhases = (
+				5AAE00000000000000000009 /* Sources */,
+				5AAE0000000000000000000A /* Frameworks */,
+				5AAE0000000000000000000B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SapphireShare;
+			productName = SapphireShare;
+			productReference = 5AAE00000000000000000001 /* SapphireShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A0C100000000000000001005 /* SapphireLocalizationTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A0C10000000000000000100B /* Build configuration list for PBXNativeTarget "SapphireLocalizationTests" */;
+			buildPhases = (
+				A0C100000000000000001007 /* Sources */,
+				A0C100000000000000001004 /* Frameworks */,
+				A0C100000000000000001006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A0C100000000000000001008 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A0C100000000000000001003 /* SapphireLocalizationTests */,
+			);
+			name = SapphireLocalizationTests;
+			productName = SapphireLocalizationTests;
+			productReference = A0C100000000000000001002 /* SapphireLocalizationTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		A17D0000000000000000000E /* SapphireAndroidWidgets */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A17D00000000000000000013 /* Build configuration list for PBXNativeTarget "SapphireAndroidWidgets" */;
@@ -1100,6 +1225,8 @@
 				A17D0000000000000000000C /* Resources */,
 			);
 			buildRules = (
+			);
+			dependencies = (
 			);
 			name = SapphireAndroidWidgets;
 			productName = SapphireAndroidWidgets;
@@ -1116,6 +1243,8 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			name = SapphireCameraExtension;
 			productName = SapphireCameraExtension;
 			productReference = CAFE100000000000000001AA /* SapphireCameraExtension.systemextension */;
@@ -1131,6 +1260,8 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			name = SapphireAudioDriver;
 			productName = SapphireAudioDriver;
 			productReference = CAFE200000000000000001BB /* SapphireAudioDriver.driver */;
@@ -1144,6 +1275,8 @@
 				DA452EAC2EAA57C90070E5C9 /* Frameworks */,
 			);
 			buildRules = (
+			);
+			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
 				DA452EB02EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
@@ -1182,6 +1315,7 @@
 				DA452EB92EAA58100070E5C9 /* PBXTargetDependency */,
 				DA7C49B02E15D3800049937A /* PBXTargetDependency */,
 				F1CE00000000000000000CAA /* PBXTargetDependency */,
+				5AAE0000000000000000000C /* PBXTargetDependency */,
 				F2DE000000000000000011BB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -1236,6 +1370,8 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			name = NearbyShare;
 			packageProductDependencies = (
 				DA7C49A42E15D34D0049937A /* SwiftECC */,
@@ -1256,6 +1392,8 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			fileSystemSynchronizedGroups = (
 				DAA7D9D52E8633B20032748B /* abt */,
 			);
@@ -1274,6 +1412,8 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			name = SapphireFinderSync;
 			productName = SapphireFinderSync;
 			productReference = F1CE000000000000000001AA /* SapphireFinderSync.appex */;
@@ -1289,31 +1429,12 @@
 			);
 			buildRules = (
 			);
+			dependencies = (
+			);
 			name = SapphireFileProvider;
 			productName = SapphireFileProvider;
 			productReference = F2DE000000000000000001BB /* SapphireFileProvider.appex */;
 			productType = "com.apple.product-type.app-extension";
-		};
-		A0C100000000000000001005 /* SapphireLocalizationTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A0C10000000000000000100B /* Build configuration list for PBXNativeTarget "SapphireLocalizationTests" */;
-			buildPhases = (
-				A0C100000000000000001007 /* Sources */,
-				A0C100000000000000001004 /* Frameworks */,
-				A0C100000000000000001006 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A0C100000000000000001008 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				A0C100000000000000001003 /* SapphireLocalizationTests */,
-			);
-			name = SapphireLocalizationTests;
-			productName = SapphireLocalizationTests;
-			productReference = A0C100000000000000001002 /* SapphireLocalizationTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -1354,6 +1475,14 @@
 				Base,
 				"zh-Hans",
 				"zh-Hant",
+				de,
+				es,
+				fr,
+				it,
+				ja,
+				ko,
+				"pt-BR",
+				ru,
 			);
 			mainGroup = DA46CF6D2DCBCA0000F00EC5;
 			minimizedProjectReferenceProxies = 1;
@@ -1389,30 +1518,53 @@
 				CAFE10000000000000000EAA /* SapphireCameraExtension */,
 				CAFE20000000000000000BBB /* SapphireAudioDriver */,
 				F1CE000000000000000008AA /* SapphireFinderSync */,
+				5AAE00000000000000000007 /* SapphireShare */,
 				F2DE00000000000000000ABB /* SapphireFileProvider */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		5AAE0000000000000000000B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5AAE00000000000000000014 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A0C100000000000000001006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A17D0000000000000000000C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				A0C100000000000000002001 /* Localizable.xcstrings in Resources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE10000000000000000DAA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE200000000000000009BB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF742DCBCA0000F00EC5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				DAA7D9142E848D340032748B /* busy_tone_cept.caf in Resources */,
 				DA91BE342E773AC8001E7836 /* begin_record.caf in Resources */,
@@ -1483,32 +1635,37 @@
 				DA91BE762E773AC8001E7836 /* Media Keys.aif in Resources */,
 				DA91BE772E773AC8001E7836 /* drag to trash.aif in Resources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF852DCBCA0100F00EC5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F1CE00000000000000000BAA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F2DE000000000000000010BB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
-		};
-		A0C100000000000000001006 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			files = (
-			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		DA452EBA2EAA5A010070E5C9 /* Resign Sapphire Helper */ = {
 			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
 			inputPaths = (
 				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/com.shariq.sapphireHelper",
 				"$(SRCROOT)/com.shariq.sapphireHelper/sapphireHelper.entitlements",
@@ -1517,54 +1674,15 @@
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/sapphire-helper-resigned-$(CODE_SIGNING_ALLOWED)-$(EXPANDED_CODE_SIGN_IDENTITY).stamp",
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = (
-				"HELPER=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/com.shariq.sapphireHelper\"",
-				"ENTITLEMENTS=\"${SRCROOT}/com.shariq.sapphireHelper/sapphireHelper.entitlements\"",
-				"STAMP=\"${SCRIPT_OUTPUT_FILE_0}\"",
-				"",
-				"if [ ! -f \"$HELPER\" ]; then",
-				"  echo \"error: Sapphire helper missing at $HELPER\"",
-				"  exit 1",
-				"fi",
-				"",
-				"if [ -z \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] || [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" = \"-\" ]; then",
-				"  echo \"warning: No code signing identity; leaving helper signature as-is\"",
-				"  codesign -d --entitlements - \"$HELPER\" || true",
-				"  touch \"$STAMP\"",
-				"  exit 0",
-				"fi",
-				"",
-				"# SMAppService daemons cannot carry restricted entitlements (application-identifier,",
-				"# get-task-allow, etc.) without a matching profile. Sign as a plain hardened tool.",
-				"# Use a secure timestamp so Gatekeeper / Login Items do not label the helper as an",
-				"# \"unidentified developer\" item (regression from --timestamp=none in 2.55).",
-				"echo \"Re-signing Sapphire helper with empty entitlements (identity: ${EXPANDED_CODE_SIGN_IDENTITY})\"",
-				"codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\",
-				"  --identifier com.shariq.sapphireHelper \\",
-				"  --entitlements \"$ENTITLEMENTS\" \\",
-				"  --generate-entitlement-der \\",
-				"  --options runtime \\",
-				"  --timestamp \\",
-				"  \"$HELPER\"",
-				"",
-				"RESIGN_RC=$?",
-				"",
-				"echo \"Helper entitlements after resign:\"",
-				"codesign -d --entitlements :- \"$HELPER\" 2>&1 | sed 's/^/  /'",
-				"echo \"Helper signature:\"",
-				"codesign -dv --verbose=2 \"$HELPER\" 2>&1 | sed 's/^/  /'",
-				"",
-				"if [ \"$RESIGN_RC\" -ne 0 ]; then",
-				"  echo \"error: Failed to re-sign helper (exit $RESIGN_RC)\"",
-				"  exit 1",
-				"fi",
-				"touch \"$STAMP\"",
-				"",
-			);
+			shellScript = "HELPER=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/com.shariq.sapphireHelper\"\nENTITLEMENTS=\"${SRCROOT}/com.shariq.sapphireHelper/sapphireHelper.entitlements\"\nSTAMP=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nif [ ! -f \"$HELPER\" ]; then\n  echo \"error: Sapphire helper missing at $HELPER\"\n  exit 1\nfi\n\nif [ -z \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] || [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" = \"-\" ]; then\n  echo \"warning: No code signing identity; leaving helper signature as-is\"\n  codesign -d --entitlements - \"$HELPER\" || true\n  touch \"$STAMP\"\n  exit 0\nfi\n\n# SMAppService daemons cannot carry restricted entitlements (application-identifier,\n# get-task-allow, etc.) without a matching profile. Sign as a plain hardened tool.\n# Use a secure timestamp so Gatekeeper / Login Items do not label the helper as an\n# \"unidentified developer\" item (regression from --timestamp=none in 2.55).\necho \"Re-signing Sapphire helper with empty entitlements (identity: ${EXPANDED_CODE_SIGN_IDENTITY})\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\\n  --identifier com.shariq.sapphireHelper \\\n  --entitlements \"$ENTITLEMENTS\" \\\n  --generate-entitlement-der \\\n  --options runtime \\\n  --timestamp \\\n  \"$HELPER\"\n\nRESIGN_RC=$?\n\necho \"Helper entitlements after resign:\"\ncodesign -d --entitlements :- \"$HELPER\" 2>&1 | sed 's/^/  /'\necho \"Helper signature:\"\ncodesign -dv --verbose=2 \"$HELPER\" 2>&1 | sed 's/^/  /'\n\nif [ \"$RESIGN_RC\" -ne 0 ]; then\n  echo \"error: Failed to re-sign helper (exit $RESIGN_RC)\"\n  exit 1\nfi\ntouch \"$STAMP\"\n";
 		};
 		DAC019182E9EA03E00CA587F /* Upload Crashlytics Symbols */ = {
 			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
 			inputPaths = (
 				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
 				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
@@ -1576,62 +1694,83 @@
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/firebase-crashlytics-uploaded.stamp",
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = (
-				"set -e",
-				"if [ \"${SAPPHIRE_LOCAL_BUILD:-NO}\" = \"YES\" ]; then",
-				"  echo \"Local public build: Crashlytics symbol upload disabled\"",
-				"  touch \"${SCRIPT_OUTPUT_FILE_0}\"",
-				"  exit 0",
-				"fi",
-				"\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"",
-				"touch \"${SCRIPT_OUTPUT_FILE_0}\"",
-				"",
-			);
+			shellScript = "set -e\nif [ \"${SAPPHIRE_LOCAL_BUILD:-NO}\" = \"YES\" ]; then\n  echo \"Local public build: Crashlytics symbol upload disabled\"\n  touch \"${SCRIPT_OUTPUT_FILE_0}\"\n  exit 0\nfi\n\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\ntouch \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		5AAE00000000000000000009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5AAE00000000000000000010 /* ShareBridge.swift in Sources */,
+				5AAE00000000000000000011 /* ContinuityShareViewController.swift in Sources */,
+				5AAE00000000000000000016 /* ContinuityShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A0C100000000000000001007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A17D0000000000000000000B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				A17D00000000000000000007 /* SapphireAndroidWidgets.swift in Sources */,
 				A17D00000000000000000008 /* AndroidWidgetSnapshotStore.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE10000000000000000BAA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				CAFE100000000000000007AA /* main.swift in Sources */,
 				CAFE1000000000000000A1AA /* main.swift in Sources */,
 				CAFE1000000000000000A2AA /* SapphireCameraProvider.swift in Sources */,
 				CAFE1000000000000000A3AA /* SapphireCameraIdentifiers.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CAFE200000000000000007BB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				CAFE200000000000000006BB /* SapphireAudioDriver.c in Sources */,
 				CAFE2000000000000000A1BB /* SapphireAudioDriver.c in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA452EAB2EAA57C90070E5C9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF722DCBCA0000F00EC5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF832DCBCA0100F00EC5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA7C497D2E15CCA50049937A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				DA7C49992E15D33A0049937A /* wire_format.pb.swift in Sources */,
 				DACA665D2E8B5FCE0056ED60 /* sharing_enums.pb.swift in Sources */,
@@ -1651,20 +1790,26 @@
 				DA7C49A22E15D33A0049937A /* offline_wire_formats.pb.swift in Sources */,
 				DA7C49A32E15D33A0049937A /* securegcm.pb.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAA7D9D02E8633B20032748B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F1CE00000000000000000AAA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				F1CE00000000000000001AA /* main.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F2DE00000000000000000EBB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
 				F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */,
 				F2DE000000000000000020BB /* Public FileProviderExtension.swift in Sources */,
@@ -1673,15 +1818,21 @@
 				F2DE000000000000000016BB /* HostConnection.swift in Sources */,
 				F2DE000000000000000017BB /* ContinuityFileProviderShared.swift in Sources */,
 			);
-		};
-		A0C100000000000000001007 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			files = (
-			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		5AAE0000000000000000000C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5AAE00000000000000000007 /* SapphireShare */;
+			targetProxy = 5AAE0000000000000000000D /* PBXContainerItemProxy */;
+		};
+		A0C100000000000000001008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
+			targetProxy = A0C100000000000000001001 /* PBXContainerItemProxy */;
+		};
 		A17D00000000000000000010 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = A17D0000000000000000000E /* SapphireAndroidWidgets */;
@@ -1722,15 +1873,119 @@
 			target = F2DE00000000000000000ABB /* SapphireFileProvider */;
 			targetProxy = F2DE000000000000000012BB /* PBXContainerItemProxy */;
 		};
-		A0C100000000000000001008 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
-			targetProxy = A0C100000000000000001001 /* PBXContainerItemProxy */;
-		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		A17D00000000000000000011 /* Debug configuration for PBXNativeTarget "SapphireAndroidWidgets" */ = {
+		5AAE0000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_SHARE_ENTITLEMENTS)";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_SHARE_EXCLUDED_SOURCES)";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "$(SAPPHIRE_SHARE_INFOPLIST_FILE)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Debug;
+		};
+		5AAE0000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_SHARE_ENTITLEMENTS)";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_SHARE_EXCLUDED_SOURCES)";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "$(SAPPHIRE_SHARE_INFOPLIST_FILE)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.Share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Release;
+		};
+		A0C100000000000000001009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireLocalizationTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/Contents/MacOS/Sapphire";
+			};
+			name = Debug;
+		};
+		A0C10000000000000000100A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireLocalizationTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/Contents/MacOS/Sapphire";
+			};
+			name = Release;
+		};
+		A17D00000000000000000011 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -1760,7 +2015,7 @@
 			};
 			name = Debug;
 		};
-		A17D00000000000000000012 /* Release configuration for PBXNativeTarget "SapphireAndroidWidgets" */ = {
+		A17D00000000000000000012 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -1789,7 +2044,7 @@
 			};
 			name = Release;
 		};
-		CAFE10000000000000000FAA /* Debug configuration for PBXNativeTarget "SapphireCameraExtension" */ = {
+		CAFE10000000000000000FAA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
@@ -1811,7 +2066,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.CameraExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.CameraExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -1821,7 +2076,7 @@
 			};
 			name = Debug;
 		};
-		CAFE100000000000000010AA /* Release configuration for PBXNativeTarget "SapphireCameraExtension" */ = {
+		CAFE100000000000000010AA /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
@@ -1843,7 +2098,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.CameraExtension;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.CameraExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1851,7 +2106,7 @@
 			};
 			name = Release;
 		};
-		CAFE20000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireAudioDriver" */ = {
+		CAFE20000000000000000CBB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
@@ -1875,7 +2130,7 @@
 			};
 			name = Debug;
 		};
-		CAFE20000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireAudioDriver" */ = {
+		CAFE20000000000000000DBB /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
@@ -1898,7 +2153,7 @@
 			};
 			name = Release;
 		};
-		DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
+		DA452EB42EAA57C90070E5C9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AUTOMATION_APPLE_EVENTS = NO;
@@ -1942,7 +2197,7 @@
 			};
 			name = Debug;
 		};
-		DA452EB52EAA57C90070E5C9 /* Release configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
+		DA452EB52EAA57C90070E5C9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AUTOMATION_APPLE_EVENTS = NO;
@@ -1985,7 +2240,7 @@
 			};
 			name = Release;
 		};
-		DA46CF882DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "SapphireTests" */ = {
+		DA46CF882DCBCA0100F00EC5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -2008,7 +2263,7 @@
 			};
 			name = Debug;
 		};
-		DA46CF892DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "SapphireTests" */ = {
+		DA46CF892DCBCA0100F00EC5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -2031,7 +2286,7 @@
 			};
 			name = Release;
 		};
-		DA46CF992DCBCA0100F00EC5 /* Debug configuration for PBXProject "Sapphire" */ = {
+		DA46CF992DCBCA0100F00EC5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -2100,7 +2355,7 @@
 			};
 			name = Debug;
 		};
-		DA46CF9A2DCBCA0100F00EC5 /* Release configuration for PBXProject "Sapphire" */ = {
+		DA46CF9A2DCBCA0100F00EC5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -2161,7 +2416,7 @@
 			};
 			name = Release;
 		};
-		DA46CF9C2DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "Sapphire" */ = {
+		DA46CF9C2DCBCA0100F00EC5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -2187,7 +2442,6 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_APP_EXCLUDED_SOURCES)";
-				SAPPHIRE_APP_EXCLUDED_SOURCES = "*/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GCC_OPTIMIZATION_LEVEL = s;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -2225,7 +2479,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 3.5;
+				MARKETING_VERSION = 3.6;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
@@ -2240,6 +2494,7 @@
 				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SAPPHIRE_APP_EXCLUDED_SOURCES = "*/Sapphire/Stubs/*";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "ObjC/Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -2248,7 +2503,7 @@
 			};
 			name = Debug;
 		};
-		DA46CF9D2DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "Sapphire" */ = {
+		DA46CF9D2DCBCA0100F00EC5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -2273,7 +2528,6 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_APP_EXCLUDED_SOURCES)";
-				SAPPHIRE_APP_EXCLUDED_SOURCES = "*/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
@@ -2310,7 +2564,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 3.5;
+				MARKETING_VERSION = 3.6;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
@@ -2324,6 +2578,7 @@
 				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SAPPHIRE_APP_EXCLUDED_SOURCES = "*/Sapphire/Stubs/*";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "ObjC/Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -2331,7 +2586,7 @@
 			};
 			name = Release;
 		};
-		DA7C49872E15CCA50049937A /* Debug configuration for PBXNativeTarget "NearbyShare" */ = {
+		DA7C49872E15CCA50049937A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -2348,7 +2603,7 @@
 			};
 			name = Debug;
 		};
-		DA7C49882E15CCA50049937A /* Release configuration for PBXNativeTarget "NearbyShare" */ = {
+		DA7C49882E15CCA50049937A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -2365,7 +2620,7 @@
 			};
 			name = Release;
 		};
-		DAA7D9D92E8633B20032748B /* Debug configuration for PBXNativeTarget "abt" */ = {
+		DAA7D9D92E8633B20032748B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -2379,7 +2634,7 @@
 			};
 			name = Debug;
 		};
-		DAA7D9DA2E8633B20032748B /* Release configuration for PBXNativeTarget "abt" */ = {
+		DAA7D9DA2E8633B20032748B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -2393,7 +2648,7 @@
 			};
 			name = Release;
 		};
-		F1CE00000000000000000EAA /* Debug configuration for PBXNativeTarget "SapphireFinderSync" */ = {
+		F1CE00000000000000000EAA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
@@ -2423,7 +2678,7 @@
 			};
 			name = Debug;
 		};
-		F1CE00000000000000000FAA /* Release configuration for PBXNativeTarget "SapphireFinderSync" */ = {
+		F1CE00000000000000000FAA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "";
@@ -2452,20 +2707,17 @@
 			};
 			name = Release;
 		};
-		F2DE00000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireFileProvider" */ = {
+		F2DE00000000000000000CBB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS)";
-				SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
-				SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE = SapphireFileProvider/Info.plist;
-				SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES = "*/PublicExtensionStubs/FileProvider/*";
-				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES)";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "$(SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE)";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -2477,6 +2729,9 @@
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES = "*/PublicExtensionStubs/FileProvider/*";
+				SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE = SapphireFileProvider/Info.plist;
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2486,20 +2741,17 @@
 			};
 			name = Debug;
 		};
-		F2DE00000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireFileProvider" */ = {
+		F2DE00000000000000000DBB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS)";
-				SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
-				SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE = SapphireFileProvider/Info.plist;
-				SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES = "*/PublicExtensionStubs/FileProvider/*";
-				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES)";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "$(SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE)";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -2511,6 +2763,9 @@
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES = "*/PublicExtensionStubs/FileProvider/*";
+				SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE = SapphireFileProvider/Info.plist;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -2518,149 +2773,124 @@
 			};
 			name = Release;
 		};
-		A0C100000000000000001009 /* Debug configuration for PBXNativeTarget "SapphireLocalizationTests" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireLocalizationTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/Contents/MacOS/Sapphire";
-			};
-			name = Debug;
-		};
-		A0C10000000000000000100A /* Release configuration for PBXNativeTarget "SapphireLocalizationTests" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireLocalizationTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/Contents/MacOS/Sapphire";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A17D00000000000000000013 /* Build configuration list for PBXNativeTarget "SapphireAndroidWidgets" */ = {
+		5AAE00000000000000000008 /* Build configuration list for PBXNativeTarget "SapphireShare" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A17D00000000000000000011 /* Debug configuration for PBXNativeTarget "SapphireAndroidWidgets" */,
-				A17D00000000000000000012 /* Release configuration for PBXNativeTarget "SapphireAndroidWidgets" */,
+				5AAE0000000000000000000E /* Debug */,
+				5AAE0000000000000000000F /* Release */,
 			);
-			defaultConfigurationName = Release;
-		};
-		CAFE100000000000000011AA /* Build configuration list for PBXNativeTarget "SapphireCameraExtension" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				CAFE10000000000000000FAA /* Debug configuration for PBXNativeTarget "SapphireCameraExtension" */,
-				CAFE100000000000000010AA /* Release configuration for PBXNativeTarget "SapphireCameraExtension" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		CAFE20000000000000000EBB /* Build configuration list for PBXNativeTarget "SapphireAudioDriver" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				CAFE20000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireAudioDriver" */,
-				CAFE20000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireAudioDriver" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */,
-				DA452EB52EAA57C90070E5C9 /* Release configuration for PBXNativeTarget "com.shariq.sapphireHelper" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		DA46CF712DCBCA0000F00EC5 /* Build configuration list for PBXProject "Sapphire" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA46CF992DCBCA0100F00EC5 /* Debug configuration for PBXProject "Sapphire" */,
-				DA46CF9A2DCBCA0100F00EC5 /* Release configuration for PBXProject "Sapphire" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA46CF882DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "SapphireTests" */,
-				DA46CF892DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "SapphireTests" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		DA46CF9B2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "Sapphire" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA46CF9C2DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "Sapphire" */,
-				DA46CF9D2DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "Sapphire" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		DA7C49862E15CCA50049937A /* Build configuration list for PBXNativeTarget "NearbyShare" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA7C49872E15CCA50049937A /* Debug configuration for PBXNativeTarget "NearbyShare" */,
-				DA7C49882E15CCA50049937A /* Release configuration for PBXNativeTarget "NearbyShare" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		DAA7D9D82E8633B20032748B /* Build configuration list for PBXNativeTarget "abt" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DAA7D9D92E8633B20032748B /* Debug configuration for PBXNativeTarget "abt" */,
-				DAA7D9DA2E8633B20032748B /* Release configuration for PBXNativeTarget "abt" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		F1CE000000000000000009AA /* Build configuration list for PBXNativeTarget "SapphireFinderSync" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				F1CE00000000000000000EAA /* Debug configuration for PBXNativeTarget "SapphireFinderSync" */,
-				F1CE00000000000000000FAA /* Release configuration for PBXNativeTarget "SapphireFinderSync" */,
-			);
-			defaultConfigurationName = Release;
-		};
-		F2DE00000000000000000BBB /* Build configuration list for PBXNativeTarget "SapphireFileProvider" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				F2DE00000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireFileProvider" */,
-				F2DE00000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireFileProvider" */,
-			);
+			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		A0C10000000000000000100B /* Build configuration list for PBXNativeTarget "SapphireLocalizationTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A0C100000000000000001009 /* Debug configuration for PBXNativeTarget "SapphireLocalizationTests" */,
-				A0C10000000000000000100A /* Release configuration for PBXNativeTarget "SapphireLocalizationTests" */,
+				A0C100000000000000001009 /* Debug */,
+				A0C10000000000000000100A /* Release */,
 			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A17D00000000000000000013 /* Build configuration list for PBXNativeTarget "SapphireAndroidWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A17D00000000000000000011 /* Debug */,
+				A17D00000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CAFE100000000000000011AA /* Build configuration list for PBXNativeTarget "SapphireCameraExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CAFE10000000000000000FAA /* Debug */,
+				CAFE100000000000000010AA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CAFE20000000000000000EBB /* Build configuration list for PBXNativeTarget "SapphireAudioDriver" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CAFE20000000000000000CBB /* Debug */,
+				CAFE20000000000000000DBB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA452EB42EAA57C90070E5C9 /* Debug */,
+				DA452EB52EAA57C90070E5C9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DA46CF712DCBCA0000F00EC5 /* Build configuration list for PBXProject "Sapphire" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA46CF992DCBCA0100F00EC5 /* Debug */,
+				DA46CF9A2DCBCA0100F00EC5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA46CF882DCBCA0100F00EC5 /* Debug */,
+				DA46CF892DCBCA0100F00EC5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DA46CF9B2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "Sapphire" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA46CF9C2DCBCA0100F00EC5 /* Debug */,
+				DA46CF9D2DCBCA0100F00EC5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DA7C49862E15CCA50049937A /* Build configuration list for PBXNativeTarget "NearbyShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA7C49872E15CCA50049937A /* Debug */,
+				DA7C49882E15CCA50049937A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DAA7D9D82E8633B20032748B /* Build configuration list for PBXNativeTarget "abt" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAA7D9D92E8633B20032748B /* Debug */,
+				DAA7D9DA2E8633B20032748B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F1CE000000000000000009AA /* Build configuration list for PBXNativeTarget "SapphireFinderSync" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F1CE00000000000000000EAA /* Debug */,
+				F1CE00000000000000000FAA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F2DE00000000000000000BBB /* Build configuration list for PBXNativeTarget "SapphireFileProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F2DE00000000000000000CBB /* Debug */,
+				F2DE00000000000000000DBB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */

@@ -58,6 +58,10 @@ class CalibrationManager: ObservableObject {
     private init() {}
 
     func start() {
+        guard settings.current.batteryManagementEnabled else {
+            print("[CalibrationManager] Battery management is off; not calibrating.")
+            return
+        }
         guard !isActive else {
             print("[CalibrationManager] Calibration is already active.")
             return

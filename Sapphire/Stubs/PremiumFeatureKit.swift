@@ -101,4 +101,18 @@ extension LiveActivityType {
         requiredPremiumFeature.map { !PremiumGate.hasAccess($0) } ?? false
     }
 }
+
+struct PremiumTierBadge: View {
+    let tier: SubscriptionTier
+
+    var body: some View {
+        Text("Requires \(SubscriptionFeatureCatalog.tierDisplayName(tier))")
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.orange.opacity(0.16))
+            .foregroundStyle(.orange)
+            .clipShape(Capsule())
+    }
+}
 #endif

@@ -89,6 +89,7 @@ struct SettingsDetailView: View {
         case .sports: SportsSettingsView()
         case .finance: FinanceSettingsView()
         case .dockLayouts: DockLayoutsSettingsView()
+        case .fractalWindows: FractalWindowsSettingsView()
         case .mediaOptimizer: MediaOptimizerSettingsView()
         case .about: AboutSettingsView()
         case nil:
@@ -574,13 +575,19 @@ private struct SystemEnhanceHingeAnimationSettingsCard: View {
             Text("Lid Hinge Animation").font(.headline).padding([.top, .horizontal])
             ToggleRow(
                 title: "Animate When Closing the Lid",
-                description: "Dim and blur the display as the lid closes past the activation angle, following the hinge.",
+                description: "Frost and dim the display from the top edge as the lid closes past the activation angle, following the hinge.",
                 isOn: $settings.settings.systemEnhanceHingeAnimationEnabled
             )
             if settings.settings.systemEnhanceHingeAnimationEnabled {
                 Divider().padding(.leading, 20)
                 SettingsDetailRow(title: "Current Lid Angle") {
                     Text(currentLidAngleText).monospacedDigit()
+                }
+                Divider().padding(.leading, 20)
+                SettingsDetailRow(title: "Preview the Closing Animation") {
+                    Button("Play") { SystemEnhanceHingeAnimationManager.shared.playPreview() }
+                        .buttonStyle(.bordered)
+                        .disabled(permissionsManager.screenRecordingStatus != .granted)
                 }
                 Divider().padding(.leading, 20)
                 CustomSliderRowView(
@@ -1629,6 +1636,7 @@ struct GeneralSettingsView: View {
     @EditingSettings var settings: SettingsEditingSession
     @State private var showingCustomConfig = false
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
+    @ObservedObject private var debugMode = DebugMode.shared
 
     var body: some View {
         ScrollView {
@@ -1673,6 +1681,8 @@ struct GeneralSettingsView: View {
                 }
             }.modifier(SettingsContainerModifier())
 
+                AppLanguageSettingsCard()
+
                 SettingsCard(title: "System") {
 
                     ToggleRow(title: "Launch at Login", description: "Start Sapphire automatically when you log in to your Mac.", isOn: $settings.settings.launchAtLogin)
@@ -1684,7 +1694,16 @@ struct GeneralSettingsView: View {
                     ToggleRow(title: "Hide from Screen Sharing", description: "Never include Sapphire in screen sharing, screenshots, or screen recordings.", isOn: $settings.settings.hideFromScreenSharing)
                     Divider().padding(.leading, 20)
 
-                    ToggleRow(title: "Google Analytics", description: "Send anonymous usage events to Google to help improve Sapphire.", isOn: $settings.settings.googleAnalyticsEnabled)
+                    if debugMode.isEnabled {
+                        ToggleRow(
+                            title: "Seamless Mode (Experimental)",
+                            description: "Present Sapphire to other apps as a quiet background process instead of a separate app window: excluded from their screen captures and window lists, kept out of Mission Control and app switching, and shown under the neutral name \u{201C}\(SeamlessModeManager.presentedName)\u{201D} in app lists. You and macOS still see Sapphire normally; only other apps' view changes. Off by default and only available in Debug Mode.",
+                            isOn: $settings.settings.seamlessModeEnabled
+                        )
+                        Divider().padding(.leading, 20)
+                    }
+
+                    ToggleRow(title: "Google Analytics", description: "Send anonymous usage events to Google to help improve Sapphire. Disable this to opt out of analytics collection.", isOn: $settings.settings.googleAnalyticsEnabled)
                     Divider().padding(.leading, 20)
 
                     ToggleRow(
@@ -2846,10 +2865,7 @@ struct WidgetsSettingsView: View {
                         isOn: $settings.settings.rememberLastMenu
                     )
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Hide Music Widget", description: "Hide music widget if no media is playing", isOn: $settings.settings.hideMusicWidgetWhenNotPlaying)
-                    ToggleRow(title: "Hide Paused Spotify Song", description: "Hide the music widget when Spotify is paused and no other system media is playing", isOn: $settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle)
-                    ToggleRow(title: "Hide Spotify When App Is Closed", description: "For logged-in Spotify accounts, hide the music widget when Spotify is not running on this Mac and Spotify is the only media source.", isOn: $settings.settings.hideSpotifyWidgetWhenAppClosed)
-                    ToggleRow(title: "Persist Music Widget", description: "Keep the music widget visible with the last track even when playback is paused or stopped", isOn: $settings.settings.persistMusicWidgetWhenPaused)
+                    MusicWidgetVisibilityRow(visibility: $settings.settings.musicWidgetVisibility)
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -4210,6 +4226,54 @@ private struct WallpaperFileRow: View {
     }
 }
 
+/// Shown when only "Activate on Drag" is on, so it's clear Snap Zones open by dragging a window up to the notch.
+private struct SnapDragToNotchHint: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var raised = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack(alignment: .top) {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(.secondary.opacity(0.5), lineWidth: 1)
+                Capsule()
+                    .fill(raised ? Color.accentColor : Color.primary.opacity(0.85))
+                    .frame(width: 22, height: 6)
+                    .padding(.top, 3)
+                Image(systemName: "macwindow")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .offset(y: raised ? 11 : 26)
+            }
+            .frame(width: 58, height: 46)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Drag a window to the notch")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Snap Zones appear when you drag any window up to the notch and hold it there. Drop it on a zone to snap it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .task {
+            guard !reduceMotion else { raised = true; return }
+            while !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.9)) { raised = true }
+                try? await Task.sleep(for: .seconds(1.8))
+                withAnimation(.easeInOut(duration: 0.6)) { raised = false }
+                try? await Task.sleep(for: .seconds(1.2))
+            }
+        }
+    }
+}
+
 struct SnapZonesSettingsView: View {
     @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
@@ -4264,6 +4328,13 @@ struct SnapZonesSettingsView: View {
                         description: "Show Snap Zones when dragging a window. Hold Command to temporarily hide them.",
                         isOn: $settings.settings.snapOnWindowDragEnabled
                     )
+
+                    if settings.settings.snapDragEnabled && !settings.settings.snapOnWindowDragEnabled {
+                        SnapDragToNotchHint()
+                            .padding(.horizontal)
+                            .padding(.bottom, 12)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
 
                     Divider().padding(.leading, 20)
 
@@ -5222,8 +5293,10 @@ struct NotificationsSettingsView: View {
 struct ProximityUnlockSettingsView: View {
     @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var authManager = AuthenticationManager.shared
+    @ObservedObject private var trustedWatches = TrustedWatchStore.shared
 
     @State private var showPasswordPrompt = false
+    @State private var hasInputMonitoring = UnlockConfirmKeyListener.hasPermission
     @State private var showUnnamedDevices = false
     @State private var isFindingByDistance = false
     @State private var isCalibratingRSSI = false
@@ -5301,6 +5374,87 @@ struct ProximityUnlockSettingsView: View {
         guard let selectedIDString = authManager.selectedDeviceID,
               let selectedID = UUID(uuidString: selectedIDString) else { return nil }
         return authManager.scannedDevices.first { $0.id == selectedID } ?? authManager.ble.devices[selectedID]
+    }
+
+    private var savedDeviceName: String {
+        if let peerID = settings.settings.bluetoothUnlockContinuityPeerID,
+           let name = authManager.continuityDevices.first(where: { $0.peerID == peerID })?.name {
+            return name
+        }
+        return String(localized: "Saved Device")
+    }
+
+    private var faceIDIlluminationLevelDescription: LocalizedStringKey {
+        switch settings.settings.faceIDIlluminationLevel {
+        case .full: "Turns the screen to full brightness."
+        case .adaptive: "Estimates how much light your face needs, and adjusts the brightness and the ring's size while Face ID looks."
+        }
+    }
+
+    private var watchStateText: Text {
+        guard let flags = authManager.watchFlags else { return Text("Waiting for the watch…") }
+        if !flags.contains(.onWrist) { return Text("Not on your wrist") }
+        return flags.contains(.unlocked) ? Text("On your wrist and unlocked") : Text("On your wrist but locked")
+    }
+
+    private func phoneLockStateLabel(_ isLocked: Bool?) -> some View {
+        HStack(spacing: 6) {
+            switch isLocked {
+            case .some(false):
+                Image(systemName: "lock.open.fill").foregroundColor(.green)
+                Text("Phone is unlocked")
+            case .some(true):
+                Image(systemName: "lock.fill").foregroundColor(.orange)
+                Text("Phone is locked")
+            case .none:
+                Image(systemName: "questionmark.circle").foregroundColor(.secondary)
+                Text("Waiting for the phone. Update the Sapphire Android app if this doesn't change.")
+            }
+        }
+        .font(.caption)
+        .foregroundColor(.secondary)
+    }
+
+    private var bluetoothResponsiveness: Binding<BluetoothResponsiveness> {
+        Binding(
+            get: {
+                if settings.settings.bluetoothUnlockPassiveMode { return .lowPower }
+                return settings.settings.bluetoothUnlockFastResponse ? .fast : .balanced
+            },
+            set: { value in
+                settings.settings.bluetoothUnlockPassiveMode = value == .lowPower
+                settings.settings.bluetoothUnlockFastResponse = value == .fast
+            }
+        )
+    }
+
+    private var bluetoothResponsivenessDescription: LocalizedStringKey {
+        switch bluetoothResponsiveness.wrappedValue {
+        case .lowPower: "Only listens for the device's broadcasts. Uses the least energy but reacts slowest."
+        case .balanced: "Stays connected and checks the signal every second."
+        case .fast: "Checks the signal four times a second and reacts to fewer readings. Uses more energy."
+        }
+    }
+
+    private var proximityAction: Binding<BluetoothProximityAction> {
+        Binding(
+            get: {
+                if !settings.settings.bluetoothUnlockWakeWithoutUnlocking { return .unlock }
+                return settings.settings.bluetoothUnlockWakeOnProximity ? .wake : .none
+            },
+            set: { value in
+                settings.settings.bluetoothUnlockWakeOnProximity = value != .none
+                settings.settings.bluetoothUnlockWakeWithoutUnlocking = value != .unlock
+            }
+        )
+    }
+
+    private var proximityActionDescription: LocalizedStringKey {
+        switch proximityAction.wrappedValue {
+        case .unlock: "Wakes the screen and enters your password."
+        case .wake: "Only wakes the screen. You unlock it yourself."
+        case .none: "Leaves the screen as it is."
+        }
     }
 
     private var filteredScannedDevices: [Device] {
@@ -5457,6 +5611,8 @@ struct ProximityUnlockSettingsView: View {
                 Divider().padding(.leading, 20)
                 faceIDLocationSection
                 Divider().padding(.leading, 20)
+                faceIDConfirmSection
+                Divider().padding(.leading, 20)
                 faceIDSecuritySection
 
                 Divider().padding(.horizontal)
@@ -5562,6 +5718,66 @@ struct ProximityUnlockSettingsView: View {
     }
 
     @ViewBuilder
+    private var faceIDConfirmSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ToggleRow(
+                title: "Light Up the Screen in the Dark",
+                description: "When the camera can't see well, the edges of the screen glow white while Face ID looks for you.",
+                isOn: $settings.settings.faceIDIlluminateInDark
+            )
+            if settings.settings.faceIDIlluminateInDark {
+                SegmentedSettingRow(
+                    title: "Light Level",
+                    description: faceIDIlluminationLevelDescription,
+                    selection: $settings.settings.faceIDIlluminationLevel
+                ) {
+                    Text("Full").tag(FaceIDIlluminationLevel.full)
+                    Text("Adaptive").tag(FaceIDIlluminationLevel.adaptive)
+                }
+                ToggleRow(
+                    title: "Show Light Ring",
+                    description: "Bright border around the screen that lights your face while the lock screen stays visible.",
+                    isOn: $settings.settings.faceIDIlluminationRing
+                )
+                if !settings.settings.faceIDIlluminationRing {
+                    InfoContainer(
+                        text: "Without the ring, only the screen brightness goes up. This works best with a light wallpaper, since a dark lock screen gives off little light.",
+                        iconName: "info.circle.fill",
+                        color: .blue
+                    )
+                    .padding([.horizontal, .bottom])
+                }
+            }
+            Divider().padding(.horizontal)
+            ToggleRow(
+                title: "Confirm with a key press",
+                description: "Face ID still recognizes you as soon as the screen wakes and shows an open lock in the notch, but the Mac unlocks only when you press a key. Return unlocks right away; macOS hides other keys on the lock screen, so Space or any other key takes about half a second. The match expires after 15 seconds. Needs Input Monitoring.",
+                isOn: Binding(
+                    get: { settings.settings.faceIDRequireKeyToUnlock },
+                    set: { isOn in
+                        settings.settings.faceIDRequireKeyToUnlock = isOn
+                        if isOn { hasInputMonitoring = UnlockConfirmKeyListener.requestPermission() }
+                    }
+                )
+            )
+            if settings.settings.faceIDRequireKeyToUnlock, !hasInputMonitoring {
+                HStack(spacing: 12) {
+                    InfoContainer(
+                        text: "The lock screen hides key presses from apps without Input Monitoring. Until it's allowed, Face ID won't unlock; type your password instead.",
+                        iconName: "exclamationmark.triangle.fill",
+                        color: .orange
+                    )
+                    Button("Open Settings") { SystemPreferencesPane.inputMonitoring.open() }
+                        .buttonStyle(.bordered)
+                }
+                .padding([.horizontal, .bottom])
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            hasInputMonitoring = UnlockConfirmKeyListener.hasPermission
+        }
+    }
+
     private var faceIDSecuritySection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Security").font(.subheadline).bold().padding([.horizontal, .top])
@@ -5633,8 +5849,53 @@ struct ProximityUnlockSettingsView: View {
         let listHeight = min(maxDeviceListHeight, CGFloat(filteredScannedDevices.count) * deviceRowHeight)
         VStack(alignment: .leading, spacing: 10) {
             Text("Trusted Device").font(.subheadline).bold().padding(.horizontal)
-            if let device = selectedDevice {
-                DeviceRowView(device: device, isSelected: true) {}.padding(.horizontal)
+            if !authManager.continuityDevices.isEmpty {
+                ToggleRow(
+                    title: "Use Continuity Phone",
+                    description: "Automatically trust the Android phone paired in Continuity.",
+                    isOn: $settings.settings.bluetoothUnlockUseContinuityPhone,
+                    style: .compact
+                )
+                if let peerID = settings.settings.bluetoothUnlockContinuityPeerID {
+                    ToggleRow(
+                        title: "Require Phone to Be Unlocked",
+                        description: "Bluetooth only unlocks this Mac while your phone is unlocked and its screen is on.",
+                        isOn: $settings.settings.bluetoothUnlockRequirePhoneUnlocked,
+                        style: .compact
+                    )
+                    if settings.settings.bluetoothUnlockRequirePhoneUnlocked {
+                        phoneLockStateLabel(authManager.phoneLockStates[peerID])
+                            .padding(.horizontal)
+                    }
+                }
+                let recommendedID = authManager.selectedDeviceID == nil ? authManager.continuityPhoneSuggestion?.peerID : nil
+                ForEach(authManager.continuityDevices.filter { $0.peerID != settings.settings.bluetoothUnlockContinuityPeerID }) { device in
+                    ContinuityDeviceRow(device: device, isRecommended: device.peerID == recommendedID) {
+                        authManager.useContinuityDevice(peerID: device.peerID)
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            ForEach(trustedWatches.watches.filter { $0.id != authManager.selectedDeviceID }) { watch in
+                TrustedWatchRow(
+                    name: watch.name,
+                    use: { authManager.useWatch(id: watch.id) },
+                    remove: { authManager.forgetWatch(id: watch.id) }
+                )
+                .padding(.horizontal)
+            }
+            if authManager.selectedDeviceID != nil {
+                Group {
+                    if let device = selectedDevice {
+                        DeviceRowView(device: device, isSelected: true) {}
+                    } else if let watch = authManager.selectedWatch {
+                        SavedDeviceRowView(name: watch.name, systemImage: "applewatch", subtitle: watchStateText)
+                    } else if settings.settings.bluetoothUnlockContinuityPeerID != nil {
+                        SavedDeviceRowView(name: savedDeviceName, systemImage: "candybarphone", subtitle: Text("Paired in Continuity"))
+                    } else {
+                        SavedDeviceRowView(name: savedDeviceName, systemImage: "wave.3.right.circle", subtitle: Text("Waiting for the device…"))
+                    }
+                }.padding(.horizontal)
                 HStack {
                     pairingStatusView
                     Spacer()
@@ -5705,7 +5966,15 @@ struct ProximityUnlockSettingsView: View {
             Divider().padding(.leading, 20)
             CustomSliderRowView(label: "No-Signal Timeout", value: $settings.settings.bluetoothUnlockNoSignalTimeout, range: 10...300, specifier: String(localized: "%.0f sec"))
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Passive Mode", description: "Uses less energy but may be slightly slower to react.", isOn: $settings.settings.bluetoothUnlockPassiveMode)
+            SegmentedSettingRow(
+                title: "Responsiveness",
+                description: bluetoothResponsivenessDescription,
+                selection: bluetoothResponsiveness
+            ) {
+                Text("Low Power").tag(BluetoothResponsiveness.lowPower)
+                Text("Balanced").tag(BluetoothResponsiveness.balanced)
+                Text("Fast").tag(BluetoothResponsiveness.fast)
+            }
             Divider().padding(.leading, 20)
             CustomSliderRowView(label: "Minimum Scan RSSI", value: Binding(get: { Double(settings.settings.bluetoothUnlockMinScanRSSI) }, set: { settings.settings.bluetoothUnlockMinScanRSSI = Int($0) }), range: -100 ... -30, specifier: "%.0f dBm")
         }.padding(.vertical)
@@ -5715,13 +5984,26 @@ struct ProximityUnlockSettingsView: View {
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Lock & Unlock Actions").font(.headline).padding([.top, .horizontal])
-            ToggleRow(title: "Wake on Proximity", description: "Wake the screen when your device comes into range.", isOn: $settings.settings.bluetoothUnlockWakeOnProximity)
+            SegmentedSettingRow(
+                title: "When Your Device Comes Near",
+                description: proximityActionDescription,
+                selection: proximityAction
+            ) {
+                Text("Unlock").tag(BluetoothProximityAction.unlock)
+                Text("Wake Screen").tag(BluetoothProximityAction.wake)
+                Text("Do Nothing").tag(BluetoothProximityAction.none)
+            }
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Wake without Unlocking", description: "Only wake the screen, do not enter the password.", isOn: $settings.settings.bluetoothUnlockWakeWithoutUnlocking)
+            SegmentedSettingRow(
+                title: "When You Walk Away",
+                description: "Lock the screen or start the screensaver.",
+                selection: $settings.settings.bluetoothUnlockUseScreensaver
+            ) {
+                Text("Lock Screen").tag(false)
+                Text("Screensaver").tag(true)
+            }
             Divider().padding(.leading, 20)
             ToggleRow(title: "Pause \"Now Playing\" while Locked", description: "Automatically pauses music or videos when the screen locks.", isOn: $settings.settings.bluetoothUnlockPauseMusicOnLock)
-            Divider().padding(.leading, 20)
-            ToggleRow(title: "Use Screensaver to Lock", description: "Starts the screensaver instead of showing the lock screen.", isOn: $settings.settings.bluetoothUnlockUseScreensaver)
             Divider().padding(.leading, 20)
             ToggleRow(title: "Turn Off Screen on Lock", description: "Puts the display to sleep when locking.", isOn: $settings.settings.bluetoothUnlockTurnOffScreenOnLock)
         }.modifier(SettingsContainerModifier())
@@ -5734,12 +6016,109 @@ struct ProximityUnlockSettingsView: View {
             case .connected: Image(systemName: "checkmark.shield.fill").foregroundColor(.green); Text("Paired & Monitoring")
             case .connecting: ProgressView().scaleEffect(0.5); Text("Connecting...")
             case .disconnecting: Image(systemName: "xmark.shield.fill").foregroundColor(.gray); Text("Disconnecting...")
+            case .disconnected where authManager.lastRSSI != nil:
+                Image(systemName: "checkmark.shield.fill").foregroundColor(.green); Text("Nearby")
             case .disconnected: Image(systemName: "xmark.shield.fill").foregroundColor(.red); Text("Out of Range")
             @unknown default: Image(systemName: "questionmark.circle.fill").foregroundColor(.gray); Text("Unknown State")
             }
         }
         .font(.caption)
         .foregroundColor(.secondary)
+    }
+}
+
+fileprivate enum BluetoothResponsiveness: Hashable { case lowPower, balanced, fast }
+
+fileprivate enum BluetoothProximityAction: Hashable { case unlock, wake, none }
+
+fileprivate struct SegmentedSettingRow<Value: Hashable, Options: View>: View {
+    let title: LocalizedStringKey
+    let description: LocalizedStringKey
+    @Binding var selection: Value
+    @ViewBuilder let options: () -> Options
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsRowLabel(title: Text(title), description: Text(description), titleFont: .system(size: 14, weight: .medium))
+            Picker(selection: $selection, content: options) { Text(title) }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+        }
+        .padding()
+    }
+}
+
+fileprivate struct ContinuityDeviceRow: View {
+    let device: ContinuityDeviceOption
+    let isRecommended: Bool
+    let action: () -> Void
+
+    private var subtitle: Text {
+        if device.peripheralID == nil { return Text("Connect it to this Mac over Bluetooth once to use it") }
+        return isRecommended ? Text("Recommended · paired in Continuity") : Text("Paired in Continuity")
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: device.isTablet ? "ipad.landscape" : "candybarphone")
+                .font(.system(size: 20))
+                .foregroundColor(device.peripheralID == nil ? .secondary : .accentColor)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: device.name).fontWeight(.medium).lineLimit(1)
+                subtitle.font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Button(device.isTablet ? "Use This Tablet" : "Use This Phone", action: action)
+                .disabled(device.peripheralID == nil)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+fileprivate struct TrustedWatchRow: View {
+    let name: String
+    let use: () -> Void
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "applewatch")
+                .font(.system(size: 20))
+                .foregroundColor(.accentColor)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: name).fontWeight(.medium).lineLimit(1)
+                Text("Sapphire watch app").font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Button("Use This Watch", action: use)
+            Button(role: .destructive, action: remove) { Image(systemName: "trash") }
+                .buttonStyle(.borderless)
+                .help("Remove Watch")
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+fileprivate struct SavedDeviceRowView: View {
+    let name: String
+    let systemImage: String
+    let subtitle: Text
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 20))
+                .foregroundColor(.accentColor)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: name).fontWeight(.semibold).foregroundColor(.accentColor).lineLimit(1)
+                subtitle.font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 6)
     }
 }
 
@@ -8132,14 +8511,21 @@ struct BatteryConfigurationView: View {
                 .roundedCard(fill: Color.black.opacity(0.15), cornerRadius: 20, stroke: Color.white.opacity(0.1))
                 .onAppear { helperManager.checkIfRunning() }
 
+                managementSwitchSection
                 notificationsSection
-                coreFeaturesSection
+                if settings.settings.batteryManagementEnabled {
+                    coreFeaturesSection
+                }
                 chargingAndSleepSection
-                automaticDischargeSection
-                OneTimeDischargeView()
+                if settings.settings.batteryManagementEnabled {
+                    automaticDischargeSection
+                    OneTimeDischargeView()
+                }
                 schedulingSection
-                CalibrationView()
-                advancedSection
+                if settings.settings.batteryManagementEnabled {
+                    CalibrationView()
+                    advancedSection
+                }
                 FanControlSectionView()
             }
             .padding(.horizontal, 25).padding(.bottom, 25)
@@ -8147,6 +8533,17 @@ struct BatteryConfigurationView: View {
         .sheet(isPresented: $showingScheduleSheet) {
             ScheduleView().environment(settings)
         }
+    }
+
+    @ViewBuilder private var managementSwitchSection: some View {
+        SettingsCard(title: "Battery Management") {
+            ToggleRow(
+                title: "Manage Charging",
+                description: "Let Sapphire control how your Mac charges: charge limit, sailing mode, heat protection, discharge and calibration. Off leaves charging to macOS. Battery stats, widgets and notifications work either way.",
+                isOn: $settings.settings.batteryManagementEnabled
+            )
+        }
+        .animation(.default, value: settings.settings.batteryManagementEnabled)
     }
 
     @ViewBuilder private var notificationsSection: some View {
@@ -8157,6 +8554,10 @@ struct BatteryConfigurationView: View {
             ToggleRow(title: "Play Sound for Low Battery Alert", description: "Get an audible alert when your battery is running low.", isOn: $settings.settings.lowBatteryNotificationSoundEnabled)
             Divider().padding(.leading, 20)
             ToggleRow(title: "Prompt to Turn on Low Power Mode", description: "Show a button to turn on Low Power Mode when your battery gets low.", isOn: $settings.settings.promptForLowPowerMode)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Show When Plugged In", description: "Show a live activity when power is connected but the battery isn't charging.", isOn: $settings.settings.batteryPluggedInActivityEnabled)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Show When Charging Starts", description: "Show a live activity when the battery actually starts charging, even if it was already plugged in.", isOn: $settings.settings.batteryChargingActivityEnabled)
             Divider().padding(.leading, 20)
             ToggleRow(title: "Show Estimated Time Remaining", description: "Display the estimated time to full (when charging) or time to empty (when on battery) in the live activity.", isOn: $settings.settings.showEstimatedBatteryTime)
         }.modifier(SettingsContainerModifier())
@@ -8213,19 +8614,34 @@ struct BatteryConfigurationView: View {
 
     @ViewBuilder private var chargingAndSleepSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Charging & Sleep").font(.headline).padding([.top, .horizontal])
-            InfoContainer(text: "Although functionality is in place to keep the battery management functinal even when the device is sleeping it may not always work. Use these settings if you want to be certain of the behaviour when the device is sleeping.", iconName: "info.circle", color: .yellow).padding()
-            ToggleRow(title: "Stop Charging When Sleeping", description: "Prevents your Mac from sitting at 100% charge overnight, which can degrade the battery over time. Charging resumes on wake.", isOn: $settings.settings.stopChargingWhenSleeping)
-            Divider().padding(.leading, 20)
-            ToggleRow(title: "Log Battery During Sleep", description: "Wakes the Mac briefly (display stays off) at a set interval to record battery state and re-assert your charge limit overnight. Sleep is never disabled.", isOn: $settings.settings.logBatteryDuringSleep)
+            let managing = settings.settings.batteryManagementEnabled
+            (managing ? Text("Charging & Sleep") : Text("Sleep")).font(.headline).padding([.top, .horizontal])
+            if managing {
+                InfoContainer(text: "Although functionality is in place to keep battery management working while the Mac sleeps, it may not always work. Use these settings if you want to be certain of the behavior while it sleeps.", iconName: "info.circle", color: .yellow).padding()
+                ToggleRow(title: "Stop charging when sleeping", description: "Prevents your Mac from sitting at 100% charge overnight, which can degrade the battery over time. Charging resumes on wake.", isOn: $settings.settings.stopChargingWhenSleeping)
+                Divider().padding(.leading, 20)
+            }
+            ToggleRow(
+                title: "Log battery during sleep",
+                description: managing
+                    ? "Wakes the Mac briefly (display stays off) at a set interval to record battery state and re-assert your charge limit overnight. Sleep is never disabled."
+                    : "Wakes the Mac briefly (display stays off) at a set interval to record battery state overnight. Sleep is never disabled.",
+                isOn: $settings.settings.logBatteryDuringSleep
+            )
             if settings.settings.logBatteryDuringSleep {
                 CustomSliderRowView(label: "Log every", value: Binding(get: { Double(settings.settings.sleepLoggingIntervalMinutes) }, set: { settings.settings.sleepLoggingIntervalMinutes = Int($0) }), range: 15...120, specifier: String(localized: "%.0f min"))
             }
+            if managing {
+                chargingWhileAwayRows
+            }
+        }.modifier(SettingsContainerModifier())
+    }
+
+    @ViewBuilder private var chargingWhileAwayRows: some View {
             Divider().padding(.leading, 20)
             ToggleRow(title: "Stop Charging When App Closed", description: "The helper tool ensures your charging rules are still applied even if the Sapphire app isn't running.", isOn: .constant(true)).disabled(true)
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Disable Sleep Until Charge Limit", description: "Keeps your Mac awake to ensure it reaches the charge limit, useful for 'top-up' schedules before you need to leave.", isOn: $settings.settings.disableSleepUntilChargeLimit)
-        }.modifier(SettingsContainerModifier())
+            ToggleRow(title: "Disable Sleep until Charge Limit", description: "Keeps your Mac awake to ensure it reaches the charge limit, useful for 'top-up' schedules before you need to leave.", isOn: $settings.settings.disableSleepUntilChargeLimit)
     }
 
     @ViewBuilder private var schedulingSection: some View {
@@ -8493,11 +8909,26 @@ struct AddTaskView: View {
 
 struct HUDSettingsView: View {
     @EditingSettings var settings: SettingsEditingSession
+    @State private var showsAdvancedAppearance = false
 
     private var hudCustomColorBinding: Binding<Color> {
         Binding(
             get: { settings.settings.hudCustomColor?.color ?? .accentColor },
             set: { settings.settings.hudCustomColor = CodableColor(color: $0) }
+        )
+    }
+
+    private func hudGradientColorBinding(_ keyPath: WritableKeyPath<Settings, CodableColor>) -> Binding<Color> {
+        Binding(
+            get: { settings.settings[keyPath: keyPath].color },
+            set: { settings.settings[keyPath: keyPath] = CodableColor(color: $0) }
+        )
+    }
+
+    private var hudGlowStrengthBinding: Binding<Double> {
+        Binding(
+            get: { settings.settings.hudGlowStrength * 100 },
+            set: { settings.settings.hudGlowStrength = $0 / 100 }
         )
     }
 
@@ -8510,6 +8941,77 @@ struct HUDSettingsView: View {
             get: { Double(settings.settings.xdrBrightnessLevel * 100) },
             set: { settings.settings.xdrBrightnessLevel = Float($0 / 100) }
         )
+    }
+
+    @ViewBuilder
+    private var advancedAppearance: some View {
+        Button {
+            showsAdvancedAppearance.toggle()
+        } label: {
+            HStack {
+                SettingsRowLabel(title: "Advanced", description: "Glow strength, and how the Gradient style blends its colors.")
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(showsAdvancedAppearance ? 90 : 0))
+            }
+            .padding()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+
+        if showsAdvancedAppearance {
+            VStack(alignment: .leading, spacing: 0) {
+                CustomSliderRowView(label: "Glow Strength", value: hudGlowStrengthBinding, range: 25...200, specifier: "%.0f%%")
+                    .disabled(!settings.settings.hudGlowEnabled)
+                    .opacity(settings.settings.hudGlowEnabled ? 1 : 0.5)
+
+                Divider().padding(.leading, 20)
+
+                if settings.settings.hudVisualStyle == .gradient {
+                    HStack {
+                        SettingsRowLabel(title: "Color Blend", description: "Smooth fades each color into the next. Stepped switches at the start of each range.")
+                        Spacer()
+                        Picker("", selection: $settings.settings.hudGradientTransition) {
+                            ForEach(HUDGradientTransition.allCases) { transition in
+                                Text(transition.displayName).tag(transition)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 160)
+                    }
+                    .padding()
+
+                    Divider().padding(.leading, 20)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            SettingsRowLabel(title: "Color Ranges", description: "Drag the handles to choose the level where each color takes over.")
+                            Spacer()
+                            Button("Reset") { settings.writeSettings { $0.resetHUDGradient() } }
+                                .controlSize(.small)
+                        }
+                        HUDGradientRangeEditor(
+                            color2Start: $settings.settings.hudGradientColor2Start,
+                            color3Start: $settings.settings.hudGradientColor3Start,
+                            colors: [settings.settings.hudGradientColor1.cgColor, settings.settings.hudGradientColor2.cgColor, settings.settings.hudGradientColor3.cgColor],
+                            transition: settings.settings.hudGradientTransition
+                        )
+                        .padding(.horizontal, 10)
+                    }
+                    .padding()
+                } else {
+                    Text("Pick the Gradient style to blend your own colors and choose the level where each one starts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding()
+                }
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
     }
 
     var body: some View {
@@ -8544,7 +9046,25 @@ struct HUDSettingsView: View {
                             .transition(.opacity)
                     }
 
+                    if settings.settings.hudVisualStyle == .gradient {
+                        HStack(spacing: 10) {
+                            SettingsRowLabel(title: "Gradient Colors", description: "Low, middle and high levels. Set where each one starts under Advanced.")
+                            Spacer()
+                            ColorPicker("Color 1", selection: hudGradientColorBinding(\.hudGradientColor1))
+                            ColorPicker("Color 2", selection: hudGradientColorBinding(\.hudGradientColor2))
+                            ColorPicker("Color 3", selection: hudGradientColorBinding(\.hudGradientColor3))
+                        }
+                        .labelsHidden()
+                        .padding()
+                        .transition(.opacity)
+                    }
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(title: "Glow", description: "A soft light behind the level bar that grows as the level rises.", isOn: $settings.settings.hudGlowEnabled)
+
                     if settings.settings.enableXDRBrightness {
+                        Divider().padding(.leading, 20)
                         ColorPicker("XDR Gradient Start", selection: $settings.settings.xdrHudGradientStart.color)
                             .padding()
                             .transition(.opacity)
@@ -8592,10 +9112,14 @@ struct HUDSettingsView: View {
                         Divider().padding(.leading, 20)
                         CustomSliderRowView(label: "Pill Thickness", value: $settings.settings.hudPillThickness, range: 44...92, specifier: "%.0f pt")
                     }
+
+                    Divider().padding(.leading, 20)
+                    advancedAppearance
                 }
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: pillStyleEnabled)
                 .animation(.default, value: settings.settings.hudVisualStyle)
+                .animation(.default, value: showsAdvancedAppearance)
                 .animation(.default, value: settings.settings.enableXDRBrightness)
 
                 // MARK: Spotify, App & Device Icons (essential)
@@ -8973,6 +9497,8 @@ struct MusicSettingsView: View {
                     .padding()
                     Divider().padding(.leading, 20)
                     HStack { Text("Open detailed Music widget on live activity click"); Spacer(); SettingsSwitch(isOn: $settings.settings.musicOpenOnClick) }.padding()
+                    Divider().padding(.leading, 20)
+                    MusicWidgetVisibilityRow(visibility: $settings.settings.musicWidgetVisibility)
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -12167,7 +12693,7 @@ struct MenuBarAppearanceEditor: View {
     private func resetTintSettings() {
         var updated = settings.settings.value
         updated.menuBarLiquidGlass = false
-        updated.menuBarLiquidGlassStyle = .frosted
+        updated.menuBarLiquidGlassStyle = LiquidGlassOptions.defaultMaterial
         updated.menuBarTintStyle = "none"
         updated.menuBarSolidColor = CodableColor(color: .clear)
         updated.menuBarGradientAngle = 0.0
@@ -12243,7 +12769,7 @@ struct MenuBarAppearanceSettingsView: View {
     private func resetAllAppearanceSettings() {
         var updated = settings.settings.value
         updated.menuBarLiquidGlass = false
-        updated.menuBarLiquidGlassStyle = .frosted
+        updated.menuBarLiquidGlassStyle = LiquidGlassOptions.defaultMaterial
         updated.menuBarTintStyle = "none"
         updated.menuBarSolidColor = CodableColor(color: .clear)
         updated.menuBarGradientAngle = 0.0
@@ -13480,5 +14006,24 @@ private struct AddFocusScheduleView: View {
         }
         .buttonStyle(.plain)
         .help(token.label)
+    }
+}
+
+/// The single "when does the music widget show" control, shared by the Widgets and Music panes.
+struct MusicWidgetVisibilityRow: View {
+    @Binding var visibility: MusicWidgetVisibility
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsRowLabel(title: Text("Show Music Widget"), description: Text(visibility.detail))
+            Picker("Show Music Widget", selection: $visibility) {
+                ForEach(MusicWidgetVisibility.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding()
     }
 }

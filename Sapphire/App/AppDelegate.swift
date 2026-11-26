@@ -29,6 +29,8 @@ final class LockScreenState: ObservableObject {
     @Published var isFaceIDEnabled: Bool = false
     @Published var isBluetoothUnlockEnabled: Bool = false
     @Published var faceIDRequiresPassword: Bool = false
+    /// Face ID matched; the lock opens on a key press (Face ID ▸ Confirm with a Key).
+    @Published var faceIDAwaitingConfirmation: Bool = false
 }
 
 final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
@@ -160,6 +162,20 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
 
     var onMouseUp: (() -> Void)?
 
+    private var contentPressDragChangeCount: Int?
+
+    /// A left press that landed on the notch is still down and hasn't become a drag-and-drop
+    /// session, so a slider dragged past the panel's edge keeps it open.
+    var isHoldingContentPress: Bool {
+        guard let changeCount = contentPressDragChangeCount else { return false }
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            // The release went somewhere else (a drag session ate it).
+            contentPressDragChangeCount = nil
+            return false
+        }
+        return NSPasteboard(name: .drag).changeCount == changeCount
+    }
+
     private static let eventsDroppedWhileIgnoringMouse: Set<NSEvent.EventType> = [
         .mouseMoved, .mouseEntered, .mouseExited, .cursorUpdate,
     ]
@@ -202,9 +218,13 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
                    event.type == .leftMouseDown ? "down" : "up", NSStringFromPoint(event.locationInWindow), NSStringFromRect(frame), chain.joined(separator: " < "))
         }
         #endif
+        if event.type == .leftMouseDown {
+            contentPressDragChangeCount = NSPasteboard(name: .drag).changeCount
+        }
         super.sendEvent(event)
         switch event.type {
         case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            if event.type == .leftMouseUp { contentPressDragChangeCount = nil }
             onMouseUp?()
         default:
             break
@@ -429,6 +449,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         GlobalEventTap.shared.installTrustAwareness()
         AccessibilityTrustMonitor.shared.start()
         SystemMutationRecovery.restoreAfterUnexpectedExit()
+        FractalAppHooks.didFinishLaunching()
 
         SapphireStandardMenu.installIfNeeded()
         ContinuityServicesProvider.shared.install()
@@ -562,6 +583,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             .sink { [weak self] in self?.updateWindowSharing(hide: $0) }
             .store(in: &cancellables)
 
+        SeamlessModeManager.shared.start(settingsModel: settingsModel)
+
         settingsModel.$settings
             .map(\.launchpadEnabled)
             .dropFirst()
@@ -652,6 +675,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard isMainAppRunning else { return }
 
         AppSystemTeardown.restoreManagedSystemState(reason: "beta-access-revoked")
+        FractalAppHooks.stopMainApp()
         NearbyConnectionManager.shared.becomeInvisible()
 
         isMainAppRunning = false
@@ -771,7 +795,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 height: visibleFrame.height
             )
             window.setContentSize(size)
-            window.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
+            window.sharingType = SeamlessModeManager.shared.sharingType(whenNotSeamless: settingsModel.current.hideFromScreenSharing)
+            SeamlessModeManager.shared.decorateIfActive(window)
             let hostingView = FocusableHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }))
             hostingView.wantsLayer = true
             hostingView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -869,6 +894,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         systemEnhanceContextMenu.installIfNeeded()
         systemEnhanceHingeAnimation.start()
         DockLayoutsManager.shared.start()
+        FractalAppHooks.bootstrapMainApp(openSettings: { [weak self] pane in
+            self?.openSettingsWindow()
+            NotificationCenter.default.post(name: NSNotification.Name("SapphireSelectSection"), object: SettingsSection.fractalWindows.rawValue)
+            if let pane {
+                NotificationCenter.default.post(name: NSNotification.Name("SapphireFractalSelectPane"), object: pane.rawValue)
+            }
+        })
         DockLayoutsManager.shared.startDockBehaviorSync()
         if settingsModel.isPremiumActive(.sportsWidget, \.sportsWidgetEnabled) {
             SportsAPIService.shared.bootstrapIfNeeded()
@@ -1177,6 +1209,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         lockScreenState.isUnlocked = false
         lockScreenState.isAuthenticating = false
         lockScreenState.faceIDRequiresPassword = false
+        lockScreenState.faceIDAwaitingConfirmation = false
         lockScreenState.isCaffeineActive = caffeineManager.isActive
         lockScreenState.isFaceIDEnabled = settingsModel.current.faceIDUnlockEnabled &&
                                           settingsModel.current.hasRegisteredFaceID &&
@@ -1321,6 +1354,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         lockScreenState.isUnlocked = true
         lockScreenState.isAuthenticating = false
         lockScreenState.faceIDRequiresPassword = false
+        lockScreenState.faceIDAwaitingConfirmation = false
 
         authManager.cancelPendingPasswordInjection(reason: "screen unlocked")
 
@@ -1378,6 +1412,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         lockScreenState.faceIDRequiresPassword = true
     }
 
+    func setFaceIDAwaitingConfirmation(_ awaiting: Bool) {
+        lockScreenState.faceIDAwaitingConfirmation = awaiting
+    }
+
     func refreshFaceIDLocationAvailability() {
         guard isScreenLocked else { return }
         lockScreenState.isFaceIDEnabled = settingsModel.current.faceIDUnlockEnabled &&
@@ -1420,6 +1458,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         SandboxIntegration.shared.stop()
         BatteryManager.shared.stopSleepBatteryLogging()
         cleanupNotchWindow()
+        FractalAppHooks.willTerminate()
 
         if Thread.isMainThread {
             AppSystemTeardown.restoreManagedSystemState(reason: "app-quit")
@@ -1500,6 +1539,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let focus = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first { $0.name == "id" }?.value.flatMap(Int.init)
             continuityManager.openWidgets(focus: focus)
+            return
+        }
+        if url.host?.lowercased() == "fractal" {
+            FractalAppHooks.handle(url: url)
             return
         }
         if url.host?.lowercased() == "writedata" {
@@ -1663,7 +1706,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let screenDisplayID = displayID(for: screen) else { continue }
             let existing = notchWindows.first { ($0 as? DynamicFocusWindow)?.displayID == screenDisplayID }
             if let existing {
-                existing.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
+                existing.sharingType = SeamlessModeManager.shared.sharingType(whenNotSeamless: settingsModel.current.hideFromScreenSharing)
+                SeamlessModeManager.shared.decorateIfActive(existing)
                 syncNotchWindowFrame(existing, to: screen)
                 (existing as? DynamicFocusWindow)?.setDisplayDetached(false)
                 continue
@@ -1747,7 +1791,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.isMovable = false
         window.isMovableByWindowBackground = false
         window.setMouseEventHandlingEnabled()
-        window.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
+        window.sharingType = SeamlessModeManager.shared.sharingType(whenNotSeamless: settingsModel.current.hideFromScreenSharing)
+        SeamlessModeManager.shared.decorateIfActive(window)
 
         if cgsSpace == nil { cgsSpace = CGSSpace(level: Self.notchSpaceLevel) }
         cgsSpace?.windows.insert(window)
@@ -2000,7 +2045,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.isOpaque = false
         window.hasShadow = true
         window.isReleasedWhenClosed = false
-        window.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
+        window.sharingType = SeamlessModeManager.shared.sharingType(whenNotSeamless: settingsModel.current.hideFromScreenSharing)
+        SeamlessModeManager.shared.decorateIfActive(window)
 
         let root = LyricsDetachedWindowView()
 
@@ -2091,9 +2137,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func resyncNotchWindowsToDisplays() {
         guard isMainAppRunning else { return }
-        let screens = NSScreen.screens
+        // One lookup per screen: `displayID` rebuilds the screen's description
+        // dictionary on every call, and this runs on each screen-change notification.
+        let screens = Dictionary(NSScreen.screens.map { ($0.displayID, $0) }, uniquingKeysWith: { first, _ in first })
         for case let window as DynamicFocusWindow in notchWindows where window.displayID != 0 {
-            if let screen = screens.first(where: { $0.displayID == window.displayID }) {
+            if let screen = screens[window.displayID] {
                 if !NotchHostWindowSizer.isPlaced(window.frame, onScreen: screen.frame) {
                     window.hostSizer.reapply(on: screen)
                 }
@@ -2225,7 +2273,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Window Sharing
 
     private func updateWindowSharing(hide: Bool) {
-        let sharingType: NSWindow.SharingType = hide ? .none : .readOnly
+        // Seamless mode keeps windows out of capture regardless of this preference.
+        let sharingType = SeamlessModeManager.shared.sharingType(whenNotSeamless: hide)
         for window in notchWindows {
             window.sharingType = sharingType
         }

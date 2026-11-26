@@ -1311,53 +1311,53 @@ struct DynamicSliderIndicator: View {
     }
 
     @ViewBuilder
-    private func sliderFill() -> some View {
+    private func sliderFill(palette: HUDLevelPalette, totalWidth: CGFloat) -> some View {
         if isXDR {
             LinearGradient(
                 gradient: Gradient(colors: [settings.settings.xdrHudGradientStart.color, settings.settings.xdrHudGradientEnd.color]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
+            .frame(width: totalWidth * CGFloat(level.clamped(to: 0...1)))
+            .clipShape(Capsule())
         } else {
-            indicatorColor
+            HUDTrackFill(color: indicatorColor(palette), stops: trackStops(palette), level: CGFloat(level), length: totalWidth)
         }
     }
 
-    private var indicatorColor: Color {
-        if forceGreen { return .green }
-        switch settings.settings.hudVisualStyle {
-        case .white: return .white.opacity(0.7)
-        case .color: return settings.settings.hudCustomColor?.color ?? .accentColor
-        case .adaptive:
-            if level >= 0.9 { return .red }
-            if level > 0.6 { return .yellow }
-            return .white
-        }
+    private func indicatorColor(_ palette: HUDLevelPalette) -> Color {
+        forceGreen ? .green : palette.color(at: level)
     }
 
-    private var shadowColor: Color {
+    private func trackStops(_ palette: HUDLevelPalette) -> [Gradient.Stop]? {
+        if forceGreen { return nil }
+        return isXDR ? xdrTrackStops : palette.trackStops
+    }
+
+    /// The user's XDR gradient, drawn across the whole track while brightness is above 100%.
+    private var xdrTrackStops: [Gradient.Stop] {
+        [.init(color: settings.settings.xdrHudGradientStart.color, location: 0),
+         .init(color: settings.settings.xdrHudGradientEnd.color, location: 1)]
+    }
+
+    private func shadowColor(_ palette: HUDLevelPalette) -> Color {
         if isXDR { return settings.settings.xdrHudGradientEnd.color }
-        return indicatorColor
+        return indicatorColor(palette)
     }
 
-    private var glowRadius: CGFloat {
-        if settings.settings.hudVisualStyle == .adaptive {
-            return CGFloat(level.clamped(to: 0...1) * 10)
-        } else {
-            return hudManager.glowIntensity * 10
-        }
+    private func glowRadius(_ palette: HUDLevelPalette) -> CGFloat {
+        palette.glows ? palette.glowRadius(at: level, maximum: 10) : hudManager.glowIntensity * 10
     }
 
     var body: some View {
+        let palette = HUDLevelPalette(settings.settings)
         GeometryReader { geometry in
             let totalWidth = geometry.size.width
 
             ZStack(alignment: .leading) {
                 Capsule().fill(.gray.opacity(0.3))
 
-                sliderFill()
-                    .frame(width: totalWidth * CGFloat(level.clamped(to: 0...1)))
-                    .clipShape(Capsule())
+                sliderFill(palette: palette, totalWidth: totalWidth)
 
                 if isXDR && showInternalXDRText {
                     Text("XDR")
@@ -1369,7 +1369,7 @@ struct DynamicSliderIndicator: View {
             }
             .clipShape(Capsule())
             .contentShape(Rectangle())
-            .shadow(color: shadowColor.opacity(0.9), radius: glowRadius)
+            .hudTrackGlow(color: shadowColor(palette), stops: trackStops(palette), level: CGFloat(level), radius: glowRadius(palette))
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .updating($isDragging) { _, state, _ in state = true }
@@ -1380,8 +1380,8 @@ struct DynamicSliderIndicator: View {
                     }
             )
             .animation(isDragging ? nil : .spring(response: 0.3, dampingFraction: 0.8), value: level)
-            .animation(.easeInOut(duration: 0.2), value: indicatorColor)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: glowRadius)
+            .animation(.easeInOut(duration: 0.2), value: indicatorColor(palette))
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: glowRadius(palette))
         }
         .onChange(of: externalLevel) { _, newLevel in self.level = newLevel }
     }
@@ -1408,48 +1408,38 @@ struct DynamicDotsIndicator: View {
         self.isXDR = isXDR
     }
 
-    private var indicatorColor: Color {
-        if forceGreen { return .green }
-        switch settings.settings.hudVisualStyle {
-        case .white: return .white.opacity(0.7)
-        case .color: return settings.settings.hudCustomColor?.color ?? .accentColor
-        case .adaptive:
-            if level >= 0.9 { return .red }
-            if level > 0.6 { return .yellow }
-            return .white
-        }
-    }
-
     private var filledDots: Int {
         min(dotCount, Int((Float(dotCount) * level.clamped(to: 0...1)).rounded(.up)))
     }
 
-    private func dotColor(for index: Int) -> Color {
+    private func dotColor(for index: Int, palette: HUDLevelPalette) -> Color {
         guard index < filledDots else { return Color.gray.opacity(0.3) }
-        guard isXDR && !forceGreen else { return indicatorColor }
-        return settings.settings.xdrHudGradientStart.color.lerp(
-            to: settings.settings.xdrHudGradientEnd.color,
-            t: CGFloat(index) / CGFloat(max(filledDots - 1, 1))
-        )
+        if forceGreen { return .green }
+        if isXDR {
+            return settings.settings.xdrHudGradientStart.color.lerp(
+                to: settings.settings.xdrHudGradientEnd.color,
+                t: CGFloat(index) / CGFloat(max(filledDots - 1, 1))
+            )
+        }
+        return palette.color(atTrackPosition: (Double(index) + 0.5) / Double(dotCount), level: level)
     }
 
-    private func dotGlowRadius(for index: Int) -> CGFloat {
+    private func dotGlowRadius(for index: Int, palette: HUDLevelPalette) -> CGFloat {
         guard index < filledDots else { return 0 }
-        if settings.settings.hudVisualStyle == .adaptive {
-            return CGFloat(level.clamped(to: 0...1) * 6)
-        }
-        return 0
+        return palette.glowRadius(at: level, maximum: 6)
     }
 
     var body: some View {
+        let palette = HUDLevelPalette(settings.settings)
         GeometryReader { geometry in
             let dotSize = (geometry.size.width - dotSpacing * CGFloat(dotCount - 1)) / CGFloat(dotCount)
             HStack(spacing: dotSpacing) {
                 ForEach(0..<dotCount, id: \.self) { index in
+                    let color = dotColor(for: index, palette: palette)
                     Circle()
-                        .fill(dotColor(for: index))
+                        .fill(color)
                         .frame(width: dotSize, height: dotSize)
-                        .shadow(color: dotColor(for: index).opacity(0.9), radius: dotGlowRadius(for: index))
+                        .shadow(color: color.opacity(0.9), radius: dotGlowRadius(for: index, palette: palette))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

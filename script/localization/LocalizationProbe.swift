@@ -26,6 +26,8 @@ func pick(_ english: String, _ simplified: String, _ traditional: String) -> Str
     default: english
     }
 }
+/// Every language the product ships compiled resources for.
+let shippedLanguages = ["en", "zh-Hans", "zh-Hant", "de", "es", "fr", "it", "ja", "ko", "pt-BR", "ru"]
 var checks: [[String: Any]] = []
 func check(_ name: String, _ actual: String, _ expected: String, scope: String) {
     checks.append([
@@ -57,9 +59,13 @@ check("missing-Chinese-translation",
       "English-only fixture", scope: "fixture")
 
 for count: Int64 in [0, 1, 2, 1000] {
-    let number = count == 1000
-        ? (Locale.current.region?.identifier == "FR" ? "1\u{202F}000" : "1,000")
-        : String(count)
+    // Grouping follows the region, not the language: the unsupported-language scenario runs in Sweden.
+    let thousand = switch Locale.current.region?.identifier {
+    case "FR": "1\u{202F}000"
+    case "SE": "1\u{00A0}000"
+    default: "1,000"
+    }
+    let number = count == 1000 ? thousand : String(count)
     let expected = pick("\(number) \(count == 1 ? "item" : "items")", "\(number)个项目", "\(number)個項目")
     check("NFiles-\(count)",
           String(localized: "NFiles", defaultValue: "\(count) files", bundle: product),
@@ -121,7 +127,7 @@ check("requested-region", Locale.current.region?.identifier ?? "<missing>",
 
 func resources(_ bundle: Bundle, table: String) -> [String: String] {
     var paths: [String: String] = [:]
-    for language in ["en", "zh-Hans", "zh-Hant"] {
+    for language in shippedLanguages {
         for ext in ["strings", "stringsdict"] {
             let key = "\(language)/\(table).\(ext)"
             if let root = bundle.resourceURL {
@@ -135,7 +141,7 @@ func resources(_ bundle: Bundle, table: String) -> [String: String] {
 
 let productResources = resources(product, table: "Localizable")
 let infoResources = resources(product, table: "InfoPlist")
-for language in ["en", "zh-Hans", "zh-Hant"] {
+for language in shippedLanguages {
     check("compiled-Localizable-\(language)",
           String(productResources.keys.contains { $0.hasPrefix("\(language)/") }),
           "true", scope: "product")

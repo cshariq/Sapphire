@@ -79,6 +79,7 @@ struct DeviceEQView: View {
                         .font(.system(size: 20, weight: .bold))
                 }
                 Spacer()
+                EQHeadroomPicker()
                 EQBandCountPicker(selection: $displayedBandCount)
             }
             .padding(.horizontal, 24)
@@ -157,6 +158,28 @@ struct EQBandCountPicker: View {
         .fixedSize()
         .help("Choose how many equalizer frequency bands to adjust")
         .accessibilityLabel("Equalizer bands")
+    }
+}
+
+struct EQHeadroomPicker: View {
+    @AppStorage(EQHeadroomMode.defaultsKey) private var storedMode = EQHeadroomMode.fixed.rawValue
+
+    private var mode: EQHeadroomMode { EQHeadroomMode(rawValue: storedMode) ?? .fixed }
+
+    var body: some View {
+        Picker("Headroom", selection: Binding(
+            get: { mode },
+            set: { MultiAudioManager.shared.setEQHeadroomMode($0) }
+        )) {
+            ForEach(EQHeadroomMode.allCases) { mode in
+                Text(mode.displayName).tag(mode)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
+        .help(mode.detail)
+        .accessibilityLabel("Equalizer headroom")
     }
 }
 

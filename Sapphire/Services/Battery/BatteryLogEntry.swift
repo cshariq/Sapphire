@@ -56,7 +56,7 @@ class BatteryDataLogger {
                 print("[BatteryDataLogger] FATAL: Could not create log directory: \(error)")
             }
             Self.migrateLegacyJSONLogIfNeeded(logFile: logFile, legacyFile: legacyFile)
-            _ = Self.loadAndPrune(logFile: logFile, cutoff: Self.retentionCutoff(now: Date()))
+            Self.pruneExpiredPrefixOnDisk(logFile: logFile, cutoff: Self.retentionCutoff(now: Date()))
         }
     }
 
@@ -223,6 +223,49 @@ class BatteryDataLogger {
             }
         }
         return result.entries
+    }
+
+    /// Launch only trims the log; nobody needs the entries yet. The log is appended in time order, so
+    /// only the expired lines at its start are read instead of decoding a month of entries.
+    private nonisolated static func pruneExpiredPrefixOnDisk(logFile: URL, cutoff: Date) {
+        guard let data = try? Data(contentsOf: logFile, options: .mappedIfSafe),
+              let kept = pruneExpiredPrefix(data, cutoff: cutoff) else { return }
+        do {
+            try kept.write(to: logFile, options: .atomic)
+        } catch {
+            print("[BatteryDataLogger] ERROR: Could not rewrite pruned log: \(error)")
+        }
+    }
+
+    private struct LineStamp: Decodable {
+        let timestamp: Date
+    }
+
+    /// Drops expired lines up to the first line that is still inside the retention window. Lines that do
+    /// not decode are kept, as in `pruneLog`. Returns nil when there is nothing to remove.
+    nonisolated static func pruneExpiredPrefix(_ data: Data, cutoff: Date) -> Data? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var keptPrefix = Data()
+        var removedLineCount = 0
+        var index = data.startIndex
+        while index < data.endIndex {
+            let lineEnd = data[index...].firstIndex(of: 0x0A) ?? data.endIndex
+            let line = data[index..<lineEnd]
+            if !line.isEmpty {
+                if let stamp = try? decoder.decode(LineStamp.self, from: Data(line)) {
+                    if stamp.timestamp >= cutoff { break }
+                    removedLineCount += 1
+                } else {
+                    keptPrefix.append(line)
+                    keptPrefix.append(0x0A)
+                }
+            }
+            index = lineEnd < data.endIndex ? lineEnd + 1 : lineEnd
+        }
+        guard removedLineCount > 0 else { return nil }
+        keptPrefix.append(data[index...])
+        return keptPrefix
     }
 
     struct PruneResult {

@@ -152,7 +152,7 @@ private struct MessageView: View {
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 8) {
-                Text(verbatim: message.text)
+                Text(Self.rendered(message.text))
                     .textSelection(.enabled)
                     .foregroundStyle(message.isError ? Color.orange : Color.primary)
                 ForEach(message.changes) { change in
@@ -172,6 +172,13 @@ private struct MessageView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// The model answers in Markdown; render inline styling (bold, italics, code) while
+    /// keeping its line breaks and list numbering as written.
+    private static func rendered(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 }
 

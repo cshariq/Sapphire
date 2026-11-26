@@ -17,6 +17,8 @@ final class MediaApplicationIdentityTests: XCTestCase {
             "com.microsoft.edgemac.helper": "com.microsoft.edgemac",
             "com.microsoft.edgemac.helper.Renderer": "com.microsoft.edgemac",
             "company.thebrowser.Browser.helper": "company.thebrowser.Browser",
+            "com.tidal.desktop.helper": "com.tidal.desktop",
+            "com.tidal.desktop.helper.Renderer": "com.tidal.desktop",
             "com.qobuz.desktop.helper": "com.qobuz.desktop",
             "com.qobuz.desktop.helper.Renderer": "com.qobuz.desktop"
         ]

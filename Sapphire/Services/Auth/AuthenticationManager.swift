@@ -23,12 +23,27 @@ enum FaceIDAuthResult: Equatable {
     case cancelled
 }
 
+extension Notification.Name {
+    static let continuityPairedPeersDidChange = Notification.Name("continuityPairedPeersDidChange")
+    static let continuityPhoneLockStateDidChange = Notification.Name("continuityPhoneLockStateDidChange")
+}
+
+struct ContinuityDeviceOption: Equatable, Identifiable {
+    let peerID: String
+    let name: String
+    let isTablet: Bool
+    /// Nil until the device has connected to this Mac over Bluetooth LE, which is what proximity is measured on.
+    let peripheralID: String?
+    var id: String { peerID }
+}
+
 private struct BluetoothAuthenticationSettings: Equatable {
     let lockRSSI: Int
     let unlockRSSI: Int
     let proximityTimeout: Double
     let signalTimeout: Double
     let passiveMode: Bool
+    let fastMode: Bool
 
     init(_ settings: Settings) {
         lockRSSI = settings.bluetoothUnlockLockRSSI
@@ -36,6 +51,7 @@ private struct BluetoothAuthenticationSettings: Equatable {
         proximityTimeout = settings.bluetoothUnlockTimeout
         signalTimeout = settings.bluetoothUnlockNoSignalTimeout
         passiveMode = settings.bluetoothUnlockPassiveMode
+        fastMode = settings.bluetoothUnlockFastResponse && !settings.bluetoothUnlockPassiveMode
     }
 }
 
@@ -61,6 +77,16 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     @Published var lastRSSI: Int?
     @Published var isPasswordSet: Bool = false
     @Published var monitoredPeripheralState: CBPeripheralState = .disconnected
+    @Published private(set) var continuityDevices: [ContinuityDeviceOption] = []
+
+    /// The selected Continuity device, or else the most recently seen phone that can be monitored.
+    var continuityPhoneSuggestion: ContinuityDeviceOption? {
+        let usable = continuityDevices.filter { $0.peripheralID != nil }
+        return usable.first { $0.peerID == settings.current.bluetoothUnlockContinuityPeerID }
+            ?? usable.first { !$0.isTablet }
+    }
+    @Published private(set) var phoneLockStates: [String: Bool] = [:]
+    @Published private(set) var watchFlags: TrustedWatchFlags?
 
     @Published var registeredFaceProfiles: [String] = []
     @Published var faceRegistrationController: CameraController?
@@ -79,6 +105,13 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     private var isFaceIDSessionForAppLock = false
 
+    /// Face ID matched on the lock screen and is waiting for a key press before unlocking.
+    @Published private(set) var isAwaitingUnlockConfirmation = false
+    private var unlockConfirmKeyListener: UnlockConfirmKeyListener?
+    private var unlockConfirmationExpiry: DispatchWorkItem?
+    /// How long a match stays valid. After that Face ID scans again, so a match can't wait for someone else to press a key.
+    private static let unlockConfirmationWindow: TimeInterval = 15
+
     private var unlockAttemptID = UUID()
     private let passwordAccount = "SapphireUserPassword"
 
@@ -96,6 +129,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         self.isPasswordSet = KeychainManager.shared.load(for: passwordAccount) != nil
         setupBindings()
         setupSettingsObserver()
+        setupContinuityPhoneObserver()
         fetchRegisteredFaces()
     }
 
@@ -148,6 +182,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             Task { @MainActor in self?.handleFaceIDSecurityEvent(event) }
         }
         self.cameraController = controller
+        if !isForAppLock { FaceIDIlluminator.shared.sessionStarted() }
         cameraController?.startAuthentication()
     }
 
@@ -173,8 +208,58 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             tearDownFaceID()
             completion(.success)
         } else if !isFaceIDSessionForAppLock {
-            handleUnlock()
+            if settings.current.faceIDRequireKeyToUnlock {
+                awaitUnlockConfirmation()
+            } else {
+                handleUnlock(fromFaceID: true)
+            }
         }
+    }
+
+    // MARK: - Confirm Before Unlocking
+
+    private func awaitUnlockConfirmation() {
+        guard isScreenLocked, !isUnlockInProgress else { return }
+        tearDownFaceID(result: .success)
+
+        let listener = UnlockConfirmKeyListener { [weak self] in
+            Task { @MainActor in self?.confirmUnlock() }
+        }
+        guard listener.start() else {
+            // Without Input Monitoring no key can confirm, so leave the Mac locked rather than unlock unasked.
+            setStatusThrottled(String(localized: "Allow Input Monitoring for Sapphire to confirm Face ID with a key press."))
+            (NSApp.delegate as? AppDelegate)?.markFaceIDRequiresPassword()
+            return
+        }
+        unlockConfirmKeyListener = listener
+        isAwaitingUnlockConfirmation = true
+        (NSApp.delegate as? AppDelegate)?.setFaceIDAwaitingConfirmation(true)
+        setStatusThrottled(String(localized: "Face recognized. Press Return or any key to unlock."))
+
+        let expiry = DispatchWorkItem { [weak self] in
+            guard let self, self.isAwaitingUnlockConfirmation else { return }
+            self.endUnlockConfirmation()
+            if self.isScreenLocked { self.startFaceIDAuthentication() }
+        }
+        unlockConfirmationExpiry = expiry
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.unlockConfirmationWindow, execute: expiry)
+    }
+
+    private func confirmUnlock() {
+        guard isAwaitingUnlockConfirmation, isScreenLocked else { return }
+        endUnlockConfirmation()
+        // Space typed a character into the password field, so clear it before the password goes in.
+        handleUnlock(fromFaceID: true, clearPasswordField: true)
+    }
+
+    private func endUnlockConfirmation() {
+        unlockConfirmationExpiry?.cancel()
+        unlockConfirmationExpiry = nil
+        unlockConfirmKeyListener?.stop()
+        unlockConfirmKeyListener = nil
+        guard isAwaitingUnlockConfirmation else { return }
+        isAwaitingUnlockConfirmation = false
+        (NSApp.delegate as? AppDelegate)?.setFaceIDAwaitingConfirmation(false)
     }
 
     private var isFaceIDLockedUntilPasswordUnlock = false
@@ -195,6 +280,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private func tearDownFaceID(result: FaceIDAuthResult = .failed) {
         guard isFaceIDAuthenticating else { return }
         isFaceIDAuthenticating = false
+        FaceIDIlluminator.shared.end()
         cameraController?.cancelCurrentOperation()
         cameraController = nil
         if let completion = pendingAppLockFaceIDCompletion {
@@ -254,6 +340,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     func purgeFaceIDAfterUnlock() {
         isFaceIDLockedUntilPasswordUnlock = false
+        endUnlockConfirmation()
         if isFaceIDAuthenticating {
             tearDownFaceID()
         }
@@ -262,13 +349,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         }
     }
 
-    func stopAllAuthentication() {
-        if isBluetoothAuthenticating {
-            isBluetoothAuthenticating = false
-            ble.monitoredUUID = nil
-            setStatusThrottled(String(localized: "Disabled"))
-            self.monitoredPeripheralState = .disconnected
-        }
+    private func stopUnlockAttemptAuthentication() {
+        endUnlockConfirmation()
         if isFaceIDAuthenticating {
             tearDownFaceID()
         }
@@ -276,23 +358,34 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     // MARK: - Auto-Unlock Pipeline
 
-    func handleUnlock() {
+    func handleUnlock(fromFaceID: Bool = false, clearPasswordField: Bool = false) {
         guard !isUnlockInProgress else { return }
         isUnlockInProgress = true
 
         guard self.isScreenLocked else {
             print("[AuthManager] Screen already unlocked. Sequence aborted.")
             isUnlockInProgress = false
-            // Keep Bluetooth monitoring: walk-away lock needs it while unlocked.
-            if isFaceIDAuthenticating { tearDownFaceID() }
+            stopUnlockAttemptAuthentication()
             return
         }
 
-        if settings.current.bluetoothUnlockWakeOnProximity || isFaceIDAuthenticating {
+        if settings.current.bluetoothUnlockWakeOnProximity || fromFaceID {
             (NSApp.delegate as? AppDelegate)?.wakeDisplay()
         }
 
-        if settings.current.bluetoothUnlockWakeWithoutUnlocking && !isFaceIDAuthenticating {
+        if settings.current.bluetoothUnlockWakeWithoutUnlocking && !fromFaceID {
+            isUnlockInProgress = false
+            return
+        }
+
+        if !fromFaceID && !isPhoneUnlockRequirementMet {
+            setStatusThrottled(String(localized: "Unlock your phone to unlock this Mac."))
+            isUnlockInProgress = false
+            return
+        }
+
+        if !fromFaceID && !isWatchUnlockRequirementMet {
+            setStatusThrottled(String(localized: "Wear your watch and unlock it to unlock this Mac."))
             isUnlockInProgress = false
             return
         }
@@ -304,7 +397,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         guard hasAccessibilityPermission(promptIfNeeded: true) else {
             setStatusThrottled(String(localized: "Enable Accessibility in System Settings to allow auto-unlock."))
             isUnlockInProgress = false
-            stopAllAuthentication()
+            stopUnlockAttemptAuthentication()
             return
         }
 
@@ -318,7 +411,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
                 self.isUnlockInProgress = false
                 return
             }
-            self.unlockWithPassword(attempt: 1, attemptID: attemptID)
+            self.unlockWithPassword(attempt: 1, attemptID: attemptID, clearPasswordField: clearPasswordField)
         }
     }
 
@@ -331,12 +424,12 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         print("[AuthManager] Cancelling pending password injection: \(reason)")
         unlockAttemptID = UUID()
         isUnlockInProgress = false
-        if isFaceIDAuthenticating { tearDownFaceID() }
+        stopUnlockAttemptAuthentication()
     }
 
     // MARK: - Password & HID Injection
 
-    private func unlockWithPassword(attempt: Int = 1, attemptID: UUID) {
+    private func unlockWithPassword(attempt: Int = 1, attemptID: UUID, clearPasswordField: Bool = false) {
         guard unlockAttemptID == attemptID, isUnlockInProgress, isScreenLocked else {
             isUnlockInProgress = false
             return
@@ -374,8 +467,33 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             var utf16chars = Array(password.utf16)
             defer { for i in utf16chars.indices { utf16chars[i] = 0 } }
 
-            // A keyboard event carries at most 20 UTF-16 units, so longer passwords go in chunks.
+            // Key events posted at the HID tap go to whatever has focus when they are delivered, not to
+            // the lock screen in particular. Re-check before every step that the Mac is still locked and
+            // loginwindow's lock screen is in front, and stop for good the moment either check fails, so
+            // the password can never be typed (and sent with Return) into an app after unlock.
+            @MainActor func lockScreenStillTargeted() -> Bool {
+                self.unlockAttemptID == attemptID && self.isUnlockInProgress && self.isScreenLocked
+                    && Self.isScreenActuallyLocked() && Self.isLockScreenFrontmost()
+            }
+            @MainActor func abortInjection() {
+                print("[AuthManager] Lock screen no longer in front — password entry aborted.")
+                self.didCompleteUnlock()
+            }
+
+            guard lockScreenStillTargeted() else { return abortInjection() }
+
+            if clearPasswordField {
+                // Delete is harmless on an empty field. Keys other than Return confirm ~0.5 s late,
+                // so a few more characters may have landed by now; clear generously.
+                for _ in 0..<16 {
+                    guard lockScreenStillTargeted() else { return abortInjection() }
+                    CGEvent(keyboardEventSource: source, virtualKey: 51, keyDown: true)?.post(tap: tapLocation)
+                    CGEvent(keyboardEventSource: source, virtualKey: 51, keyDown: false)?.post(tap: tapLocation)
+                }
+            }
+
             for start in stride(from: 0, to: utf16chars.count, by: 20) {
+                guard lockScreenStillTargeted() else { return abortInjection() }
                 var chunk = Array(utf16chars[start..<min(start + 20, utf16chars.count)])
                 defer { for i in chunk.indices { chunk[i] = 0 } }
                 if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
@@ -387,26 +505,38 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
                 }
             }
 
+            guard lockScreenStillTargeted() else { return abortInjection() }
             let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
             let retUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
             retDown?.post(tap: tapLocation)
             retUp?.post(tap: tapLocation)
 
-            self.setStatusThrottled(String(localized: "Unlocked"))
-
-            if attempt < 2 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    guard let self else { return }
-                    if self.unlockAttemptID == attemptID && self.isScreenLocked {
-                        print("[AuthManager] Screen still locked — retrying password entry.")
-                        self.unlockWithPassword(attempt: attempt + 1, attemptID: attemptID)
-                    } else {
-                        self.didCompleteUnlock()
-                    }
+            // No automatic retry: loginwindow keeps reporting "locked" while it verifies the password,
+            // so a timed retry can pass every check and then land in the app that comes forward. Hold the
+            // attempt open briefly (blocking a second injection), then release it. If the Mac is still
+            // locked, the user can try Face ID again or type the password.
+            self.setStatusThrottled(String(localized: "Unlocking..."))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self, self.unlockAttemptID == attemptID else { return }
+                if self.isScreenLocked {
+                    self.setStatusThrottled(String(localized: "Unlock failed"))
+                    (NSApp.delegate as? AppDelegate)?.markFaceIDRequiresPassword()
                 }
-            } else {
                 self.didCompleteUnlock()
             }
+        }
+    }
+
+    /// True only when a loginwindow-owned window is on screen above the screen-saver level, i.e. the
+    /// lock screen is what keyboard input will reach. Fails closed if the window list is unavailable.
+    private static func isLockScreenFrontmost() -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        let minLayer = Int(CGWindowLevelForKey(.screenSaverWindow))
+        return windows.contains { info in
+            (info[kCGWindowOwnerName as String] as? String) == "loginwindow"
+                && ((info[kCGWindowLayer as String] as? Int) ?? Int.min) >= minLayer
         }
     }
 
@@ -443,14 +573,110 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func selectDevice(uuid: UUID) {
+        let match = continuityDevices.first { $0.peripheralID == uuid.uuidString }
+        settings.settings.bluetoothUnlockContinuityPeerID = match?.peerID
         settings.settings.bluetoothUnlockDeviceID = uuid.uuidString
         stopScan()
     }
 
+    func useContinuityDevice(peerID: String) {
+        guard let device = continuityDevices.first(where: { $0.peerID == peerID }),
+              let peripheralID = device.peripheralID else { return }
+        settings.settings.bluetoothUnlockContinuityPeerID = device.peerID
+        settings.settings.bluetoothUnlockDeviceID = peripheralID
+        if isScanning { stopScan() }
+    }
+
     func forgetDevice() {
+        if settings.current.bluetoothUnlockContinuityPeerID != nil {
+            settings.settings.bluetoothUnlockUseContinuityPhone = false
+        }
+        settings.settings.bluetoothUnlockContinuityPeerID = nil
         settings.settings.bluetoothUnlockDeviceID = nil
-        ble.monitoredUUID = nil
-        self.monitoredPeripheralState = .disconnected
+    }
+
+    // MARK: - Continuity Phone
+
+    private func setupContinuityPhoneObserver() {
+        NotificationCenter.default.publisher(for: .continuityPairedPeersDidChange)
+            .map { _ in () }
+            .merge(with: settings.changes(of: { $0.bluetoothUnlockUseContinuityPhone }).map { _ in () })
+            .prepend(())
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.refreshContinuityPhone() }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .continuityPhoneLockStateDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] note in
+                guard let self, let peerID = note.userInfo?["peerID"] as? String else { return }
+                let isLocked = note.userInfo?["isLocked"] as? Bool
+                guard self.phoneLockStates[peerID] != isLocked else { return }
+                self.phoneLockStates[peerID] = isLocked
+                self.handlePhoneLockStateChange(peerID: peerID)
+            }
+            .store(in: &cancellables)
+    }
+
+    /// True unless the trusted device is the Continuity phone, the option is on, and the phone hasn't reported being unlocked.
+    var isPhoneUnlockRequirementMet: Bool {
+        let current = settings.current
+        guard current.bluetoothUnlockRequirePhoneUnlocked,
+              let peerID = current.bluetoothUnlockContinuityPeerID else { return true }
+        return phoneLockStates[peerID] == false
+    }
+
+    var selectedWatch: TrustedWatch? {
+        settings.current.bluetoothUnlockDeviceID.flatMap { TrustedWatchStore.shared.watch(id: $0) }
+    }
+
+    /// A trusted watch unlocks the Mac only while it is on the wrist and unlocked.
+    var isWatchUnlockRequirementMet: Bool {
+        guard selectedWatch != nil else { return true }
+        return watchFlags?.isSuperset(of: [.onWrist, .unlocked]) == true
+    }
+
+    func useWatch(id: String) {
+        settings.settings.bluetoothUnlockContinuityPeerID = nil
+        settings.settings.bluetoothUnlockDeviceID = id
+        if isScanning { stopScan() }
+    }
+
+    func forgetWatch(id: String) {
+        if settings.current.bluetoothUnlockDeviceID == id { forgetDevice() }
+        TrustedWatchStore.shared.remove(id: id)
+    }
+
+    func updateWatchFlags(_ flags: TrustedWatchFlags) {
+        let wasMet = isWatchUnlockRequirementMet
+        if watchFlags != flags { watchFlags = flags }
+        guard !wasMet, isWatchUnlockRequirementMet, isBluetoothAuthenticating,
+              wasPreviouslyPresent, isScreenLocked, !isUnlockInProgress else { return }
+        handleUnlock()
+    }
+
+    private func handlePhoneLockStateChange(peerID: String) {
+        guard peerID == settings.current.bluetoothUnlockContinuityPeerID,
+              isPhoneUnlockRequirementMet, isBluetoothAuthenticating,
+              wasPreviouslyPresent, isScreenLocked, !isUnlockInProgress else { return }
+        handleUnlock()
+    }
+
+    private func refreshContinuityPhone() {
+        let current = settings.current
+        let devices = ContinuityKeystore.shared.pairedPeers
+            .filter { $0.deviceType == .phone || $0.deviceType == .tablet }
+            .sorted { ($0.lastSeenAt ?? .distantPast) > ($1.lastSeenAt ?? .distantPast) }
+            .map { ContinuityDeviceOption(peerID: $0.id, name: $0.name, isTablet: $0.deviceType == .tablet, peripheralID: $0.blePeripheralID) }
+        if continuityDevices != devices { continuityDevices = devices }
+
+        guard current.bluetoothUnlockUseContinuityPhone, let suggestion = continuityPhoneSuggestion,
+              let peripheralID = suggestion.peripheralID,
+              current.bluetoothUnlockDeviceID == nil || current.bluetoothUnlockContinuityPeerID != nil,
+              current.bluetoothUnlockDeviceID != peripheralID
+                || current.bluetoothUnlockContinuityPeerID != suggestion.peerID else { return }
+        settings.settings.bluetoothUnlockContinuityPeerID = suggestion.peerID
+        settings.settings.bluetoothUnlockDeviceID = peripheralID
     }
 
     // MARK: - Passwords & Lifecycle
@@ -491,7 +717,16 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             .prepend(settings.current.bluetoothUnlockDeviceID)
             .assign(to: \.selectedDeviceID, on: self)
             .store(in: &cancellables)
-        $isEnabled.combineLatest($selectedDeviceID).sink { [weak self] (enabled, deviceID) in self?.updateMonitoringConfig(enabled: enabled, deviceID: deviceID) }.store(in: &cancellables)
+        $isEnabled.combineLatest($selectedDeviceID, $isPasswordSet.removeDuplicates())
+            .sink { [weak self] (enabled, deviceID, _) in self?.updateMonitoringConfig(enabled: enabled, deviceID: deviceID) }
+            .store(in: &cancellables)
+        TrustedWatchStore.shared.$watches.dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateMonitoringConfig(enabled: self.isEnabled, deviceID: self.selectedDeviceID)
+            }
+            .store(in: &cancellables)
     }
 
     private func setupSettingsObserver() {
@@ -504,6 +739,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
                 self.ble.proximityTimeout = configuration.proximityTimeout
                 self.ble.signalTimeout = configuration.signalTimeout
                 self.ble.setPassiveMode(configuration.passiveMode)
+                self.ble.setFastMode(configuration.fastMode)
             }
             .store(in: &cancellables)
 
@@ -519,6 +755,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func handleDisplayWillSleep() {
+        FaceIDIlluminator.shared.end()
         if isFaceIDAuthenticating { cameraController?.stopCameraSession() }
     }
 
@@ -575,7 +812,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     func updatePresence(presence: Bool, reason: String) {
         if isEnabled && isBluetoothAuthenticating {
             if presence {
-                if !wasPreviouslyPresent, !isUnlockInProgress { handleUnlock() }
+                if !wasPreviouslyPresent, !isUnlockInProgress, isScreenLocked { handleUnlock() }
             } else {
                 handleLock()
             }
@@ -586,9 +823,14 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     // MARK: - Utilities
 
     private func updateMonitoringConfig(enabled: Bool, deviceID: String?) {
+        let watchKey = deviceID.flatMap { TrustedWatchStore.shared.watch(id: $0)?.keyBase64 }
+        ble.watchVerifier = watchKey.map { key in { data in TrustedWatchStore.verify(serviceData: data, keyBase64: key) } }
+        if watchKey == nil { watchFlags = nil }
         if enabled, self.isPasswordSet, let id = deviceID, let uuid = UUID(uuidString: id) {
             if isBluetoothAuthenticating && ble.monitoredUUID == uuid { return }
             isBluetoothAuthenticating = true
+            wasPreviouslyPresent = false
+            lastRSSI = nil
             ble.startMonitor(uuid: uuid)
             setStatusThrottled(String(localized: "Monitoring for device..."))
         } else {
@@ -597,6 +839,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
                 ble.stopMonitor()
                 setStatusThrottled(String(localized: "Disabled"))
                 self.monitoredPeripheralState = .disconnected
+                self.lastRSSI = nil
             }
         }
     }

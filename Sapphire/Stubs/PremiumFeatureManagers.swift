@@ -71,6 +71,7 @@ final class SystemEnhanceHingeAnimationManager {
     private init() {}
     func start() {}
     func stop() {}
+    func playPreview() {}
 }
 
 final class DockLayoutsManager {

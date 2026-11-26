@@ -38,23 +38,46 @@ enum GraphicEQDesigner {
     static let prototypeGainDB = 12.0
     static let maxBandGainDB = 30.0
 
+    /// Cuts and boosts sit in separate banks so adaptive headroom can shrink just the boosts.
+    /// `preamp` is the static pre-cut of the fixed modes; `headroomFloor` < 1 switches the adaptive
+    /// follower on and bounds how far it may turn the level down.
     struct Design: Equatable {
-        var sections: [EQBiquad]
+        var cutSections: [EQBiquad]
+        var boostSections: [EQBiquad]
         var preamp: Double
-        var isFlat: Bool { preamp == 1 && sections.allSatisfy(\.isIdentity) }
+        var headroomFloor: Double
+        var sampleRate: Double
+        var isFlat: Bool { preamp == 1 && cutSections.allSatisfy(\.isIdentity) && boostSections.allSatisfy(\.isIdentity) }
 
-        static let flat = Design(sections: Array(repeating: .identity, count: GraphicEQDesigner.sectionCount), preamp: 1)
+        static let flat: Design = {
+            let bank = Array(repeating: EQBiquad.identity, count: GraphicEQDesigner.sectionCount)
+            return Design(cutSections: bank, boostSections: bank, preamp: 1, headroomFloor: 1, sampleRate: 48000)
+        }()
     }
 
     struct Plan {
         var biquads: [EQBiquad]
         var bandGainsDB: [Double]
-        var preampDB: Double
+        var peakBoostDB: Double
     }
 
-    static func design(gains: [Double], bass: Double, sampleRate: Double) -> Design {
+    /// `trimDB` is a pre-cut shared across a device (Raise Output Volume): the design cuts by whichever
+    /// is larger, its own peak boost or the trim, so every app on the device sits at the same level.
+    static func design(gains: [Double], bass: Double, sampleRate: Double, headroom: EQHeadroomMode = .fixed, trimDB: Double = 0) -> Design {
         let plan = plan(gains: gains, bass: bass, sampleRate: sampleRate)
-        return Design(sections: plan.biquads, preamp: pow(10, plan.preampDB / 20))
+        var cuts = Array(repeating: EQBiquad.identity, count: sectionCount), boosts = cuts
+        for (index, biquad) in plan.biquads.enumerated() where !biquad.isIdentity {
+            let gain = index < AudioEQ.bandCount ? plan.bandGainsDB[index] : bass
+            if gain > 0 { boosts[index] = biquad } else { cuts[index] = biquad }
+        }
+        let rate = max(sampleRate, 8000)
+        if headroom == .adaptive {
+            let floor = plan.peakBoostDB > 0 ? pow(10, -(plan.peakBoostDB + 1) / 20) : 1
+            return Design(cutSections: cuts, boostSections: boosts, preamp: 1, headroomFloor: floor, sampleRate: rate)
+        }
+        let cutDB = max(plan.peakBoostDB, trimDB)
+        let preamp = cutDB > 0.05 ? pow(10, -cutDB / 20) : 1
+        return Design(cutSections: cuts, boostSections: boosts, preamp: preamp, headroomFloor: 1, sampleRate: rate)
     }
 
     static func plan(gains rawGains: [Double], bass: Double, sampleRate: Double) -> Plan {
@@ -79,7 +102,7 @@ enum GraphicEQDesigner {
         }
 
         let peak = peakResponseDB(biquads, sampleRate: fs)
-        return Plan(biquads: biquads, bandGainsDB: bandGains, preampDB: peak > 0.05 ? -peak : 0)
+        return Plan(biquads: biquads, bandGainsDB: bandGains, peakBoostDB: peak > 0.05 ? peak : 0)
     }
 
     static func responseDB(_ biquads: [EQBiquad], frequency: Double, sampleRate: Double) -> Double {
@@ -254,14 +277,30 @@ enum GraphicEQDesigner {
 // MARK: - Realtime processor
 
 final class GraphicEQProcessor {
-    static let capacity = GraphicEQDesigner.sectionCount
+    // Slots [0, bankSize) hold cuts, [bankSize, capacity) boosts; a band that changes sign glides
+    // out of one slot and into the other.
+    static let bankSize = GraphicEQDesigner.sectionCount
+    static let capacity = 2 * bankSize
     static let rampStepFrames = 32
     static let rampSteps = 48
     static let blockFrames = 512
 
+    // Headroom follower: just under the output limiter's 0.97 so it rarely has to act.
+    static let headroomCeiling = 0.944
+    static let headroomChunkFrames = 32
+    static let headroomHoldSeconds = 1.0
+    static let headroomReleaseDBPerSecond = 2.0
+    static let headroomRecoverDBPerSecond = 40.0
+    // Boosts shrink toward the cut-only signal before the level is touched, but keep at least this share.
+    static let minimumBoostDepth = 0.25
+    static let boostDepthReleasePerSecond = 0.25
+    static let boostDepthRecoverPerSecond = 20.0
+
     private let lock: UnsafeMutablePointer<os_unfair_lock_s>
     private let pending: UnsafeMutablePointer<EQBiquad>
     private var pendingPreamp = 1.0
+    private var pendingFloor = 1.0
+    private var pendingSampleRate = 48000.0
     private var pendingVersion: UInt64 = 0
 
     private var appliedVersion: UInt64 = 0
@@ -273,10 +312,23 @@ final class GraphicEQProcessor {
     private let retiring: UnsafeMutablePointer<Bool>
     private let activeList: UnsafeMutablePointer<Int>
     private let block: UnsafeMutablePointer<SIMD2<Double>>
+    private let dry: UnsafeMutablePointer<SIMD2<Double>>
     private var activeCount = 0
+    private var activeCutCount = 0
+    private var rampRemaining = 0
     private var preamp = 1.0
     private var preampTarget = 1.0
-    private var rampRemaining = 0
+
+    private var headroomFloor = 1.0
+    private var headroomGain = 1.0
+    private var headroomHoldFrames = 0
+    private var headroomHoldRemaining = 0
+    private var releaseLogPerFrame = 0.0
+    private var recoverLogPerFrame = 0.0
+    private var boostDepth = 1.0
+    private var depthHoldRemaining = 0
+    private var depthReleasePerFrame = 0.0
+    private var depthRecoverPerFrame = 0.0
 
     init() {
         let n = Self.capacity
@@ -290,28 +342,40 @@ final class GraphicEQProcessor {
         retiring = .allocate(capacity: n); retiring.initialize(repeating: false, count: n)
         activeList = .allocate(capacity: n); activeList.initialize(repeating: 0, count: n)
         block = .allocate(capacity: Self.blockFrames); block.initialize(repeating: .zero, count: Self.blockFrames)
+        dry = .allocate(capacity: Self.blockFrames); dry.initialize(repeating: .zero, count: Self.blockFrames)
     }
 
     deinit {
         lock.deinitialize(count: 1); lock.deallocate()
         pending.deallocate(); current.deallocate(); target.deallocate()
         z1.deallocate(); z2.deallocate(); enabled.deallocate(); retiring.deallocate()
-        activeList.deallocate(); block.deallocate()
+        activeList.deallocate(); block.deallocate(); dry.deallocate()
     }
 
     func post(_ design: GraphicEQDesigner.Design) {
         os_unfair_lock_lock(lock)
-        for i in 0..<Self.capacity {
-            pending[i] = i < design.sections.count ? design.sections[i] : .identity
+        for i in 0..<Self.bankSize {
+            pending[i] = i < design.cutSections.count ? design.cutSections[i] : .identity
+            pending[Self.bankSize + i] = i < design.boostSections.count ? design.boostSections[i] : .identity
         }
         pendingPreamp = design.preamp
+        pendingFloor = design.headroomFloor
+        pendingSampleRate = design.sampleRate
         pendingVersion &+= 1
         os_unfair_lock_unlock(lock)
     }
 
-    var isTransparent: Bool { activeCount == 0 && rampRemaining == 0 && preamp == 1 }
+    var isTransparent: Bool {
+        activeCount == 0 && rampRemaining == 0 && preamp == 1 && headroomGain == 1 && boostDepth == 1
+    }
 
     var activeSectionCount: Int { activeCount }
+
+    /// Level the headroom follower is applying right now (1 = none).
+    var currentHeadroomGain: Double { headroomGain }
+
+    /// Share of the boosts currently applied (1 = full curve).
+    var currentBoostDepth: Double { boostDepth }
 
     @_optimize(speed)
     func process(_ samples: UnsafeMutablePointer<Float>, frames: Int) {
@@ -347,17 +411,11 @@ final class GraphicEQProcessor {
                 for n in 0..<frames { block[n] = SIMD2<Double>(frame[n]) * gain; gain += step }
             }
 
-            var j = 0
-            if frames >= 4 {
-                while j + 4 <= activeCount {
-                    runFour(activeList[j], activeList[j + 1], activeList[j + 2], activeList[j + 3], frames: frames)
-                    j += 4
-                }
-            }
-            while j < activeCount {
-                runOne(activeList[j], frames: frames)
-                j += 1
-            }
+            let managesHeadroom = headroomFloor < 1 || headroomGain < 1 || boostDepth < 1
+            runSections(from: 0, to: activeCutCount, frames: frames)
+            if managesHeadroom { dry.update(from: block, count: frames) }
+            runSections(from: activeCutCount, to: activeCount, frames: frames)
+            if managesHeadroom { followHeadroom(frames: frames) }
 
             for n in 0..<frames { frame[n] = SIMD2<Float>(block[n]) }
         }
@@ -374,6 +432,21 @@ final class GraphicEQProcessor {
             if energy < 1e-40 || !enabled[i] { z1[i] = .zero; z2[i] = .zero }
         }
         if dropped { rebuildActiveList() }
+    }
+
+    @_optimize(speed)
+    private func runSections(from first: Int, to end: Int, frames: Int) {
+        var j = first
+        if frames >= 4 {
+            while j + 4 <= end {
+                runFour(activeList[j], activeList[j + 1], activeList[j + 2], activeList[j + 3], frames: frames)
+                j += 4
+            }
+        }
+        while j < end {
+            runOne(activeList[j], frames: frames)
+            j += 1
+        }
     }
 
     @inline(__always)
@@ -420,6 +493,86 @@ final class GraphicEQProcessor {
         z1[i2] = r1; z2[i2] = r2; z1[i3] = u1; z2[i3] = u2
     }
 
+    /// Keeps boosted peaks under full scale without turning the track down: the boosts shrink first
+    /// (mixing back toward the cut-only signal in `dry`), and only once they're at their minimum depth does
+    /// the level drop. Both act per chunk with a ramped attack, a one-second hold and a slow release so they
+    /// sit still instead of pumping with the beat, and neither pushes below what the cut-only signal peaks at.
+    @_optimize(speed)
+    private func followHeadroom(frames: Int) {
+        let block = self.block, dry = self.dry, ceiling = Self.headroomCeiling
+        var start = 0
+        while start < frames {
+            let end = min(start + Self.headroomChunkFrames, frames)
+            let count = Double(end - start)
+
+            var depthLimit = 1.0
+            for n in start..<end {
+                let x = dry[n], w = block[n]
+                for c in 0..<2 {
+                    let bound = max(ceiling, abs(x[c]))
+                    guard abs(w[c]) > bound else { continue }
+                    let boost = w[c] - x[c]
+                    depthLimit = min(depthLimit, (bound - (boost > 0 ? x[c] : -x[c])) / abs(boost))
+                }
+            }
+
+            let depth = boostDepth
+            var nextDepth: Double
+            if depth > depthLimit {
+                nextDepth = max(depthLimit, Self.minimumBoostDepth)
+                depthHoldRemaining = headroomHoldFrames
+            } else if headroomFloor >= 1 {
+                nextDepth = min(depth + depthRecoverPerFrame * count, 1, depthLimit)
+            } else if depthHoldRemaining > 0 {
+                depthHoldRemaining -= end - start
+                nextDepth = depth
+            } else if headroomGain < 1 {
+                nextDepth = depth
+            } else {
+                nextDepth = min(depth + depthReleasePerFrame * count, 1, depthLimit)
+            }
+            if nextDepth > 0.99999 { nextDepth = 1 }
+
+            if depth != 1 || nextDepth != 1 {
+                let step = (nextDepth - depth) / count
+                var a = depth
+                for n in start..<end { a += step; block[n] = dry[n] + (block[n] - dry[n]) * a }
+            }
+            boostDepth = nextDepth
+
+            var gainLimit = Double.infinity
+            for n in start..<end {
+                let x = dry[n], y = block[n]
+                for c in 0..<2 where abs(y[c]) > ceiling {
+                    gainLimit = min(gainLimit, max(ceiling, abs(x[c])) / abs(y[c]))
+                }
+            }
+
+            let gain = headroomGain
+            var next: Double
+            if gain > gainLimit, nextDepth <= Self.minimumBoostDepth {
+                next = max(gainLimit, headroomFloor)
+                headroomHoldRemaining = headroomHoldFrames
+            } else if gain < headroomFloor {
+                next = min(gain * exp(recoverLogPerFrame * count), headroomFloor, max(gainLimit, gain))
+            } else if headroomHoldRemaining > 0 {
+                headroomHoldRemaining -= end - start
+                next = gain
+            } else {
+                next = min(gain * exp(releaseLogPerFrame * count), 1, max(gainLimit, gain))
+            }
+            if next > 0.99999 { next = 1 }
+
+            if gain != 1 || next != 1 {
+                let step = (next - gain) / count
+                var g = gain
+                for n in start..<end { g += step; block[n] *= g }
+            }
+            headroomGain = next
+            start = end
+        }
+    }
+
     // MARK: Parameter changes
 
     private static func transparent(poles c: EQBiquad) -> EQBiquad {
@@ -432,7 +585,15 @@ final class GraphicEQProcessor {
         appliedVersion = pendingVersion
         for i in 0..<Self.capacity { target[i] = pending[i] }
         preampTarget = pendingPreamp
+        headroomFloor = pendingFloor
+        let rate = pendingSampleRate
         os_unfair_lock_unlock(lock)
+
+        headroomHoldFrames = Int(rate * Self.headroomHoldSeconds)
+        releaseLogPerFrame = Self.headroomReleaseDBPerSecond / 20 * log(10) / rate
+        recoverLogPerFrame = Self.headroomRecoverDBPerSecond / 20 * log(10) / rate
+        depthReleasePerFrame = Self.boostDepthReleasePerSecond / rate
+        depthRecoverPerFrame = Self.boostDepthRecoverPerSecond / rate
 
         for i in 0..<Self.capacity {
             if target[i].isIdentity {
@@ -474,9 +635,11 @@ final class GraphicEQProcessor {
 
     private func rebuildActiveList() {
         activeCount = 0
+        activeCutCount = 0
         for i in 0..<Self.capacity where enabled[i] {
             activeList[activeCount] = i
             activeCount += 1
+            if i < Self.bankSize { activeCutCount = activeCount }
         }
     }
 }

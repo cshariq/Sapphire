@@ -16,6 +16,14 @@ enum TaskAction: String, Codable, CaseIterable, Identifiable {
 
     var id: String { self.rawValue }
 
+    /// Battery actions, which only run while battery management is on. Fan actions always run.
+    var changesCharging: Bool {
+        switch self {
+        case .setChargeLimit, .topUp, .dischargeTo, .startCalibration: true
+        case .setFanAuto, .setFanConstant, .setFanSensorBased: false
+        }
+    }
+
     var displayName: String {
         switch self {
         case .setChargeLimit: "Set Charge Limit"
@@ -114,7 +122,7 @@ class ScheduleManager: ObservableObject {
         let now = Date()
         let calendar = Calendar.current
 
-        if settings.current.enableBiweeklyCalibration {
+        if settings.current.enableBiweeklyCalibration, settings.current.batteryManagementEnabled {
             let lastCalibrationDate = UserDefaults.standard.object(forKey: lastCalibrationDateKey) as? Date
             let twoWeeksAgo = calendar.date(byAdding: .day, value: -14, to: now)!
 
@@ -231,6 +239,10 @@ class ScheduleManager: ObservableObject {
     }
 
     private func executeTask(_ task: ScheduledTask) {
+        if task.action.changesCharging, !settings.current.batteryManagementEnabled {
+            print("[ScheduleManager] Skipping \(task.action) — battery management is off.")
+            return
+        }
         logTaskExecution(task)
 
         switch task.action {

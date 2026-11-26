@@ -144,21 +144,25 @@ enum LiquidGlassInteraction: Int, Codable, Hashable {
 }
 
 struct LiquidGlassOptions: Codable, Equatable {
-    var material: LiquidGlassMaterial = .frosted
+    static let defaultMaterial: LiquidGlassMaterial = .hud
+    static let legacyDefaultMaterial: LiquidGlassMaterial = .frosted
+    static let legacyDefaultTintHex = "#352D164F"
+
+    var material: LiquidGlassMaterial = LiquidGlassOptions.defaultMaterial
     var tintHex: String = ""
     var cornerRadius: Double = 16
     var appearance: LiquidGlassAppearance = .auto
     var hovered: Bool = false
 
     static let lockScreenDefault = LiquidGlassOptions(
-        material: .frosted,
-        tintHex: "#352D164F",
+        material: defaultMaterial,
+        tintHex: "",
         cornerRadius: 40,
         appearance: .dark
     )
 
     init(
-        material: LiquidGlassMaterial = .frosted,
+        material: LiquidGlassMaterial = LiquidGlassOptions.defaultMaterial,
         tintHex: String = "",
         cornerRadius: Double = 16,
         appearance: LiquidGlassAppearance = .auto,
@@ -182,8 +186,8 @@ struct LiquidGlassOptions: Codable, Equatable {
     }
 
     static let notchDefault = LiquidGlassOptions(
-        material: .frosted,
-        tintHex: "#352D164F",
+        material: defaultMaterial,
+        tintHex: "",
         cornerRadius: 0,
         appearance: .dark
     )
@@ -400,6 +404,9 @@ final class LiquidGlassHostView: NSView {
     private var requestedShadow: LiquidGlassShadow = .none
     private var appliedShadow: LiquidGlassShadow?
     private var appliedShadowPath: CGPath?
+    // The shadow lives on its own layer under the glass, masked to the outside of the shape. Cast from the
+    // glass layer itself it also fills the area behind the material and shows through it as a dark smudge.
+    private let shadowView = LiquidGlassShadowView()
 
     private var externalShapeRect: CGRect?
     var onLayout: (() -> Void)?
@@ -604,6 +611,8 @@ final class LiquidGlassHostView: NSView {
         glass.layer?.masksToBounds = false
         addSubview(glass, positioned: .below, relativeTo: nil)
         effectView = glass
+        shadowView.frame = glass.frame
+        addSubview(shadowView, positioned: .below, relativeTo: glass)
         applyShapeIfNeeded()
     }
 
@@ -678,23 +687,23 @@ final class LiquidGlassHostView: NSView {
     }
 
     private func applyShadowIfNeeded() {
-        guard let layer = effectView?.layer else { return }
+        guard let effectView else { return }
         let requestedOpacity = max(0, min(1, requestedShadow.opacity))
-        let path = requestedOpacity > 0 ? nativeShapePath : nil
+        // The path stays while the opacity eases to zero; dropping it at once cut the fade-out short.
+        let path = requestedOpacity > 0 || requestedShadow.radius > 0 ? nativeShapePath : nil
         let opacity = path == nil ? 0 : requestedOpacity
-        guard appliedShadow != requestedShadow || appliedShadowPath != path else { return }
+        let frame = effectView.frame
+        guard appliedShadow != requestedShadow || appliedShadowPath != path || shadowView.frame != frame else { return }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let animation = pendingShadowAnimation
-        let shadowOpacity = Float(opacity)
-        let radius = max(0, requestedShadow.radius)
-        let offset = CGSize(width: requestedShadow.offset.width, height: -requestedShadow.offset.height)
-        layer.shadowColor = requestedShadow.color.cgColor
-        NotchLayerScalarAnimation.set(layer, "shadowOpacity", to: shadowOpacity, equals: { ($0 as? Float) == shadowOpacity }, animation: animation)
-        NotchLayerScalarAnimation.set(layer, "shadowRadius", to: radius, equals: { ($0 as? CGFloat) == radius }, animation: animation)
-        NotchLayerScalarAnimation.set(layer, "shadowOffset", to: offset, equals: { ($0 as? CGSize) == offset }, animation: animation)
-        layer.shadowPath = path
+        if shadowView.frame != frame { shadowView.frame = frame }
+        shadowView.apply(
+            requestedShadow,
+            opacity: Float(opacity),
+            path: path,
+            animation: pendingShadowAnimation
+        )
         CATransaction.commit()
 
         appliedShadow = requestedShadow
@@ -723,6 +732,57 @@ final class LiquidGlassHostView: NSView {
             ty: bounds.minY + bounds.maxY
         )
         return path.copy(using: &flip)
+    }
+}
+
+private final class LiquidGlassShadowView: NSView {
+    private let caster = CALayer()
+    private let outsideMask = CAShapeLayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        clipsToBounds = false
+        caster.actions = NotchLayerSurfaceView.noActions
+        caster.masksToBounds = false
+        outsideMask.actions = NotchLayerSurfaceView.noActions
+        outsideMask.fillRule = .evenOdd
+        outsideMask.fillColor = NSColor.black.cgColor
+        caster.mask = outsideMask
+        layer?.addSublayer(caster)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func apply(_ shadow: LiquidGlassShadow, opacity: Float, path: CGPath?, animation: Animation?) {
+        let radius = max(0, shadow.radius)
+        let offset = CGSize(width: shadow.offset.width, height: -shadow.offset.height)
+        if caster.frame != bounds { caster.frame = bounds }
+        caster.shadowColor = shadow.color.cgColor
+        NotchLayerScalarAnimation.set(caster, "shadowOpacity", to: opacity, equals: { ($0 as? Float) == opacity }, animation: animation)
+        NotchLayerScalarAnimation.set(caster, "shadowRadius", to: radius, equals: { ($0 as? CGFloat) == radius }, animation: animation)
+        NotchLayerScalarAnimation.set(caster, "shadowOffset", to: offset, equals: { ($0 as? CGSize) == offset }, animation: animation)
+        caster.shadowPath = path
+        caster.isHidden = path == nil
+
+        guard let path else {
+            outsideMask.path = nil
+            return
+        }
+        let reach = ceil(3 * radius + max(abs(offset.width), abs(offset.height))) + 2
+        let canvas = bounds.insetBy(dx: -reach, dy: -reach)
+        if outsideMask.frame != canvas { outsideMask.frame = canvas }
+        let hole = CGMutablePath()
+        hole.addRect(CGRect(origin: .zero, size: canvas.size))
+        hole.addPath(path, transform: CGAffineTransform(translationX: reach, y: reach))
+        outsideMask.path = hole
     }
 }
 

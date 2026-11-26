@@ -18,6 +18,7 @@ enum AppSystemTeardown {
         LiveWallpaperManager.shared.shutdown()
 
         CaffeineManager.shared.stop()
+        EQVolumeCompensator.shared.removeAll()
         FocusNotificationSuppressor.shared.restoreAll()
         LidAngleAutomationManager.shared.releaseForcedSystemChanges()
         FanManager.releaseFanControlForTermination()

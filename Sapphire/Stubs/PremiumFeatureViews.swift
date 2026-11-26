@@ -47,6 +47,7 @@ struct ArchivesAndDMGInstallerSettingsView: View { var body: some View { Premium
 struct AppLockSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "App Lock")) } }
 struct DockLayoutsSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Dock Layouts")) } }
 struct MediaOptimizerSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Media Optimizer")) } }
+struct FractalWindowsSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Fractal Windows")) } }
 
 struct SEQuitProtectionRulesView: View {
     var body: some View {

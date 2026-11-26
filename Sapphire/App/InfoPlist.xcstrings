@@ -1,13 +1,203 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "CFBundleDisplayName": {
+      "comment": "Bundle display name",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        }
+      }
+    },
+    "CFBundleName": {
+      "comment": "Bundle name",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire"
+          }
+        }
+      }
+    },
     "NSAppleEventsUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt Zugriff, um die Wiedergabe zu steuern und Titelinformationen aus Musik und Spotify zu lesen."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs access to control playback and read track information from Music and Spotify."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita acceso para controlar la reproducción y leer la información de las pistas de Música y Spotify."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin d’un accès pour contrôler la lecture et lire les informations des morceaux de Musique et Spotify."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede l'accesso per controllare la riproduzione e leggere le informazioni sui brani da Musica e Spotify."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireが、ミュージックとSpotifyの再生を制御し、トラック情報を読み取るために、アクセスが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 Music과 Spotify에서 재생을 제어하고 트랙 정보를 읽으려면 접근 권한이 필요합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa de acesso para controlar a reprodução e ler as informações das faixas do Música e do Spotify."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужен доступ для управления воспроизведением и чтения сведений о треках из Музыки и Spotify."
           }
         },
         "zh-Hans": {
@@ -27,10 +217,58 @@
     "NSAppleMusicUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird verwendet, um kommende Songs und Playlists in Apple Music anzuzeigen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Used to show upcming songs and playlists within apple music"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa para mostrar las próximas canciones y listas de reproducción en Apple Music"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisé pour afficher les morceaux et listes de lecture à venir dans Apple Music"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usato per mostrare i prossimi brani e le playlist in Apple Music"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Music内で次の曲とプレイリストを表示するために使用します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Music에서 다음 노래와 플레이리스트를 표시하는 데 사용됩니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usado para mostrar as próximas músicas e playlists no Apple Music"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Используется для показа предстоящих песен и плейлистов в Apple Music"
           }
         },
         "zh-Hans": {
@@ -49,11 +287,60 @@
     },
     "NSAudioCaptureUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "extractionState": "stale",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire hört auf dem Mac auf das Audio Ihrer Musik-App, um Songtexte wortgenau zu timen. Das Audio verlässt Ihren Mac nie."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire listens to your music app's audio on this Mac to time lyrics word by word. The audio never leaves your Mac."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire escucha el audio de tu app de música en este Mac para sincronizar las letras palabra por palabra. El audio nunca sale de tu Mac."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire écoute l’audio de votre app de musique sur ce Mac pour minuter les paroles mot par mot. L’audio ne quitte jamais votre Mac."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire ascolta l'audio dell'app musicale su questo Mac per temporizzare i testi parola per parola. L'audio non lascia mai il Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、このMac上のミュージックAppのオーディオを聴いて、歌詞を単語ごとにタイミング合わせします。オーディオがMacの外に出ることはありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire는 가사를 단어별로 맞추기 위해 이 Mac에서 음악 앱의 오디오를 듣습니다. 오디오는 Mac을 벗어나지 않습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire ouve o áudio do seu app de música neste Mac para sincronizar as letras palavra por palavra. O áudio nunca sai do seu Mac."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire слушает звук вашего музыкального приложения на этом Mac, чтобы расставить тексты песен по словам. Звук никогда не покидает ваш Mac."
           }
         },
         "zh-Hans": {
@@ -73,10 +360,58 @@
     "NSBluetoothAlwaysUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt Bluetooth, um neue Verbindungen und Hinweise bei schwacher Batterie anzuzeigen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs bluetooth to show new connections and battery low notifications"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita Bluetooth para mostrar nuevas conexiones y notificaciones de batería baja"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin du Bluetooth pour afficher les nouvelles connexions et les notifications de batterie faible"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede il Bluetooth per mostrare le nuove connessioni e le notifiche di batteria scarica"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、新しい接続とバッテリー残量低下の通知を表示するためにBluetoothを必要とします"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 새로운 연결과 배터리 부족 알림을 표시하려면 Bluetooth가 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa do Bluetooth para mostrar novas conexões e notificações de bateria fraca"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужен Bluetooth, чтобы показывать новые подключения и уведомления о низком заряде батареи"
           }
         },
         "zh-Hans": {
@@ -96,10 +431,58 @@
     "NSCalendarsFullAccessUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt die Kalenderberechtigung, um anstehende Ereignisse anzuzeigen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs calendar permission to show upcoming events"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita el permiso de Calendario para mostrar los próximos eventos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin de l’autorisation d’accès au calendrier pour afficher les événements à venir"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede l'autorizzazione al calendario per mostrare i prossimi eventi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、今後のイベントを表示するためにカレンダーの権限を必要とします"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 예정된 일정을 표시하려면 캘린더 권한이 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa de permissão para o calendário para mostrar os próximos eventos"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужно разрешение на доступ к календарю, чтобы показывать предстоящие события"
           }
         },
         "zh-Hans": {
@@ -119,10 +502,58 @@
     "NSCalendarsUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip kann aus Ihren Kalendermustern lernen, um Ihren Zeitplan und Ihre Vorlieben besser zu verstehen."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Blip can learn from your calendar patterns to better understand your schedule and preferences."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip puede aprender de tus patrones de calendario para entender mejor tu agenda y tus preferencias."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip peut apprendre de vos habitudes de calendrier pour mieux comprendre votre emploi du temps et vos préférences."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip può apprendere dai modelli del tuo calendario per capire meglio i tuoi impegni e le tue preferenze."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blipは、カレンダーのパターンを学習して、スケジュールや好みをよりよく理解できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip은 캘린더 패턴을 학습하여 일정과 선호도를 더 잘 이해할 수 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Blip pode aprender com os padrões do seu calendário para entender melhor sua agenda e suas preferências."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip может изучать ваши календарные привычки, чтобы лучше понимать ваше расписание и предпочтения."
           }
         },
         "zh-Hans": {
@@ -142,10 +573,58 @@
     "NSCameraUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire verwendet die Kamera für das Spiegel-Widget, damit Sie sich selbst in der Notch sehen können."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire uses the camera for the Mirror widget so you can see yourself in the notch."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire usa la cámara para el widget Espejo, para que puedas verte en la muesca."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire utilise la caméra pour le widget Miroir afin que vous puissiez vous voir dans l’encoche."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire usa la fotocamera per il widget Specchio così puoi vederti nel notch."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、ノッチに自分の姿を表示するミラーウィジェットのためにカメラを使用します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire는 노치에서 자신을 볼 수 있도록 미러 위젯에 카메라를 사용합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire usa a câmera para o widget Espelho, para que você possa se ver no entalhe."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire использует камеру для виджета «Зеркало», чтобы вы могли видеть себя в вырезе."
           }
         },
         "zh-Hans": {
@@ -165,10 +644,58 @@
     "NSContactsUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt Zugriff auf Ihre Kontakte, um beim Senden einer Antwort aus einer Mitteilung die richtige Telefonnummer oder E-Mail-Adresse zu finden."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs access to your contacts to find the correct phone number or email when sending a reply from a notification."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita acceso a tus contactos para encontrar el número de teléfono o el correo correctos al enviar una respuesta desde una notificación."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin d’accéder à vos contacts pour trouver le bon numéro de téléphone ou la bonne adresse e-mail lors de l’envoi d’une réponse depuis une notification."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede l'accesso ai contatti per trovare il numero di telefono o l'email corretti quando invii una risposta da una notifica."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、通知から返信を送信するときに正しい電話番号やメールアドレスを見つけるために、連絡先へのアクセスを必要とします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 알림에서 답장을 보낼 때 올바른 전화번호나 이메일을 찾으려면 연락처 접근이 필요합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa de acesso aos seus contatos para encontrar o número de telefone ou e-mail correto ao enviar uma resposta de uma notificação."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужен доступ к контактам, чтобы находить нужный номер телефона или адрес электронной почты при отправке ответа из уведомления."
           }
         },
         "zh-Hans": {
@@ -188,10 +715,58 @@
     "NSFocusStatusUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erforderlich, um Live-Fokus-Updates bereitzustellen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Needed to provide live focus updates"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necesario para ofrecer actualizaciones de foco en directo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessaire pour fournir des mises à jour de concentration en direct"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessario per fornire aggiornamenti in tempo reale sul Focus"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイムの集中モードの更新を提供するために必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 집중 업데이트를 제공하는 데 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessário para fornecer atualizações de foco ao vivo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужно для актуальных данных о фокусировании"
           }
         },
         "zh-Hans": {
@@ -208,13 +783,132 @@
         }
       }
     },
+    "NSHumanReadableCopyright": {
+      "comment": "Copyright (human-readable)",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. Alle Rechte vorbehalten."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. All rights reserved."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. Todos los derechos reservados."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. Tous droits réservés."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. Tutti i diritti riservati."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. All rights reserved."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. 모든 권리 보유."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. Todos os direitos reservados."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia. Все права защищены."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia。保留所有权利。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2025 Shariq Charolia。保留一切權利。"
+          }
+        }
+      }
+    },
     "NSLocalNetworkUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt dies, um die Funktion „Nearby Share“ bereitzustellen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs this to provide nearby share functionality"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita esto para ofrecer la función de uso compartido cercano"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin de cette autorisation pour fournir la fonctionnalité de partage à proximité"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede questo per offrire la funzionalità Nearby Share"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、Nearby Share機能を提供するためにこれを必要とします"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 근처 공유 기능을 제공하려면 이 권한이 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa disto para oferecer o recurso Nearby Share"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужно это для работы Nearby Share"
           }
         },
         "zh-Hans": {
@@ -234,10 +928,58 @@
     "NSLocationAlwaysAndWhenInUseUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erforderlich, um aktuelle Wetterinformationen bereitzustellen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Needed to provide live weather updates"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necesario para ofrecer actualizaciones del tiempo en directo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessaire pour fournir des mises à jour météo en direct"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessario per fornire aggiornamenti meteo in tempo reale"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リアルタイムの天気の更新を提供するために必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 날씨 업데이트를 제공하는 데 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessário para fornecer atualizações de clima ao vivo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужно для актуальных данных о погоде"
           }
         },
         "zh-Hans": {
@@ -257,10 +999,58 @@
     "NSLocationUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt dies für das Wetter"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs this to weather"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita esto para mostrar el tiempo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin de cette autorisation pour la météo"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede questo per il meteo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、天気を表示するためにこれを必要とします"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 날씨 기능을 제공하려면 이 권한이 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa disto para o clima"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужно это для показа погоды"
           }
         },
         "zh-Hans": {
@@ -280,10 +1070,58 @@
     "NSLocationWhenInUseUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip verwendet Ihren Standort für das lokale Wetter, Orte in der Nähe und standortbezogene Aufgaben."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Blip uses your location for local weather, nearby places, and location-aware tasks."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip usa tu ubicación para el tiempo local, lugares cercanos y tareas que dependen de la ubicación."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip utilise votre position pour la météo locale, les lieux à proximité et les tâches liées à la localisation."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip usa la tua posizione per il meteo locale, i luoghi vicini e le attività basate sulla posizione."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blipは、現地の天気、近くの場所、位置情報に基づくタスクのために位置情報を使用します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip은 현지 날씨, 근처 장소 및 위치 기반 작업에 사용자의 위치를 사용합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Blip usa sua localização para o clima local, lugares próximos e tarefas baseadas em localização."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip использует вашу геопозицию для местной погоды, ближайших мест и задач с учётом местоположения."
           }
         },
         "zh-Hans": {
@@ -303,10 +1141,58 @@
     "NSMicrophoneUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire verwendet das Mikrofon für Gemini-Live-Sprachunterhaltungen."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire uses the microphone for Gemini Live voice conversations."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire usa el micrófono para las conversaciones de voz con Gemini Live."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire utilise le micro pour les conversations vocales Gemini Live."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire usa il microfono per le conversazioni vocali di Gemini Live."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、Gemini Liveの音声会話にマイクを使用します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire는 Gemini Live 음성 대화에 마이크를 사용합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire usa o microfone para as conversas por voz do Gemini Live."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire использует микрофон для голосовых бесед Gemini Live."
           }
         },
         "zh-Hans": {
@@ -326,10 +1212,58 @@
     "NSNetworkVolumesUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt dies, um die Funktion „Nearby Share“ bereitzustellen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs this to provide nearby share functionality"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita esto para ofrecer la función de uso compartido cercano"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin de cette autorisation pour fournir la fonctionnalité de partage à proximité"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede questo per offrire la funzionalità Nearby Share"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、Nearby Share機能を提供するためにこれを必要とします"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 근처 공유 기능을 제공하려면 이 권한이 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa disto para oferecer o recurso Nearby Share"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужно это для работы Nearby Share"
           }
         },
         "zh-Hans": {
@@ -346,13 +1280,203 @@
         }
       }
     },
+    "NSPhotoLibraryAddUsageDescription": {
+      "comment": "Privacy - Photo Library Additions Usage Description",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire fügt von Ihrem Smartphone synchronisierte Fotos hinzu, damit sie in der Fotos-App erscheinen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire adds photos synced from your phone so they appear in the Photos app."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire añade las fotos sincronizadas desde tu teléfono para que aparezcan en la app Fotos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire ajoute les photos synchronisées depuis votre téléphone afin qu’elles apparaissent dans l’app Photos."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire aggiunge le foto sincronizzate dal telefono in modo che compaiano nell'app Foto."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、スマートフォンから同期された写真を“写真”Appに表示されるよう追加します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire는 휴대전화에서 동기화한 사진을 사진 앱에 나타나도록 추가합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire adiciona as fotos sincronizadas do seu celular para que apareçam no app Fotos."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire добавляет фото, синхронизированные с вашего телефона, чтобы они появлялись в приложении «Фото»."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 会添加从你手机同步的照片，使其显示在“照片”App 中。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 會加入從你手機同步的照片，使其顯示在「照片」App 中。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription": {
+      "comment": "Privacy - Photo Library Usage Description",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire fügt von Ihrem Smartphone synchronisierte Fotos hinzu, damit sie in der Fotos-App erscheinen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire adds photos synced from your phone so they appear in the Photos app."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire añade las fotos sincronizadas desde tu teléfono para que aparezcan en la app Fotos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire ajoute les photos synchronisées depuis votre téléphone afin qu’elles apparaissent dans l’app Photos."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire aggiunge le foto sincronizzate dal telefono in modo che compaiano nell'app Foto."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、スマートフォンから同期された写真を“写真”Appに表示されるよう追加します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire는 휴대전화에서 동기화한 사진을 사진 앱에 나타나도록 추가합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire adiciona as fotos sincronizadas do seu celular para que apareçam no app Fotos."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire добавляет фото, синхронизированные с вашего телефона, чтобы они появлялись в приложении «Фото»."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 会添加从你手机同步的照片，使其显示在“照片”App 中。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 會加入從你手機同步的照片，使其顯示在「照片」App 中。"
+          }
+        }
+      }
+    },
     "NSRemindersFullAccessUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt dies, um anstehende Erinnerungen anzuzeigen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs this to show upcoming reminders"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita esto para mostrar los próximos recordatorios"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin de cette autorisation pour afficher les rappels à venir"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede questo per mostrare i prossimi promemoria"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、今後のリマインダーを表示するためにこれを必要とします"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 예정된 미리 알림을 표시하려면 이 권한이 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa disto para mostrar os próximos lembretes"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужно это, чтобы показывать предстоящие напоминания"
           }
         },
         "zh-Hans": {
@@ -372,10 +1496,58 @@
     "NSRemindersUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erforderlich, um Erinnerungen anzuzeigen"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Needed to show reminders"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necesario para mostrar recordatorios"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessaire pour afficher les rappels"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessario per mostrare i promemoria"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダーを表示するために必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 알림을 표시하는 데 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessário para mostrar lembretes"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужно для показа напоминаний"
           }
         },
         "zh-Hans": {
@@ -394,11 +1566,60 @@
     },
     "NSScreenCaptureUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "extractionState": "stale",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erforderlich für die Gemini-Live-Aktivität"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Needed for gemini live activity"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necesario para la actividad en directo de Gemini"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nécessaire pour l’activité en direct de Gemini"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessario per Gemini Live Activity"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini Liveのアクティビティに必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini 라이브 활동에 필요합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necessário para a atividade ao vivo do Gemini"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужно для live-активности Gemini"
           }
         },
         "zh-Hans": {
@@ -418,10 +1639,58 @@
     "NSSystemExtensionUsageDescription": {
       "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
       "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire benötigt diese Erweiterung, um ein virtuelles Audiogerät mit mehreren Ausgängen zu erstellen."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire needs this extension to create a virtual multi-output audio device."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire necesita esta extensión para crear un dispositivo de audio virtual de salida múltiple."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire a besoin de cette extension pour créer un appareil audio virtuel à sorties multiples."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire richiede questa estensione per creare un dispositivo audio virtuale a uscite multiple."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphireは、仮想のマルチ出力オーディオデバイスを作成するために、この機能拡張を必要とします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire가 가상 다중 출력 오디오 기기를 만들려면 이 확장 프로그램이 필요합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Sapphire precisa desta extensão para criar um dispositivo de áudio virtual de várias saídas."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire нужно это расширение для создания виртуального аудиоустройства с несколькими выходами."
           }
         },
         "zh-Hans": {
@@ -434,6 +1703,286 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 需要此延伸功能來建立虛擬多重輸出音訊裝置。"
+          }
+        }
+      }
+    },
+    "RAR Archive": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAR-Archiv"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAR Archive"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivo RAR"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive RAR"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivio RAR"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RARアーカイブ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAR 보관 파일"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo RAR"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Архив RAR"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAR 归档文件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAR 封存檔"
+          }
+        }
+      }
+    },
+    "Sapphire Dock Layout": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire-Dock-Layout"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Dock Layout"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disposición del Dock de Sapphire"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disposition du Dock Sapphire"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout del Dock di Sapphire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Dockレイアウト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Dock 레이아웃"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout do Dock do Sapphire"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Раскладка Dock Sapphire"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Dock 布局"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Dock 版面配置"
+          }
+        }
+      }
+    },
+    "Sapphire Launchpad Item": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire-Launchpad-Objekt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Launchpad Item"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elemento de Launchpad de Sapphire"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Élément Launchpad Sapphire"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elemento Launchpad di Sapphire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Launchpad項目"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Launchpad 항목"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Item do Launchpad do Sapphire"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Элемент Launchpad Sapphire"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 启动台项目"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 啟動台項目"
+          }
+        }
+      }
+    },
+    "Sapphire Settings Backup": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire-Einstellungs-Backup"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire Settings Backup"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia de seguridad de ajustes de Sapphire"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde des réglages Sapphire"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backup delle impostazioni di Sapphire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire設定のバックアップ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 설정 백업"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backup de Ajustes do Sapphire"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Резервная копия настроек Sapphire"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 设置备份"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 設定備份"
           }
         }
       }

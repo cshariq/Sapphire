@@ -86,14 +86,16 @@ enum ProcessRunner {
 
     // MARK: - Fire-and-forget
 
-    static func runDetached(executablePath: String, arguments: [String]) {
+    /// `onExit` runs once the process ends, or right away if it fails to launch.
+    static func runDetached(executablePath: String, arguments: [String], onExit: (@Sendable () -> Void)? = nil) {
         DispatchQueue.global(qos: .utility).async {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executablePath)
             process.arguments = arguments
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
-            try? process.run()
+            if let onExit { process.terminationHandler = { _ in onExit() } }
+            do { try process.run() } catch { onExit?() }
         }
     }
 

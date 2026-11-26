@@ -117,6 +117,10 @@ final class TrackpadGestureHandler {
                 return event
             }
 
+            if Thread.isMainThread, MainActor.assumeIsolated({ NotchScrollClaims.isClaimed(event) }) {
+                return event
+            }
+
             let now = CACurrentMediaTime()
             guard let client = self.routedClient(), !self.isStabilizing(client, now: now) else {
                 return event
@@ -227,5 +231,24 @@ final class TrackpadGestureHandler {
         }
 
         hasProcessedCurrentGesture = false
+    }
+}
+/// Notch content that turns scrolls into a value of its own (the timer ruler) claims the
+/// scrolls over it, so they don't also open, switch or dismiss notch views.
+@MainActor
+protocol NotchScrollClaiming: NSView {
+    func claimsScroll(_ event: NSEvent) -> Bool
+}
+
+@MainActor
+enum NotchScrollClaims {
+    private static let views = NSHashTable<NSView>.weakObjects()
+
+    static func add(_ view: some NotchScrollClaiming) { views.add(view) }
+
+    static func remove(_ view: some NotchScrollClaiming) { views.remove(view) }
+
+    static func isClaimed(_ event: NSEvent) -> Bool {
+        views.allObjects.contains { ($0 as? NotchScrollClaiming)?.claimsScroll(event) == true }
     }
 }

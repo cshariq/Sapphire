@@ -91,6 +91,12 @@ final class NotchStageView: NSView {
         wrap: { [unowned self] view in self.environmentWrapped(view) }
     )
     private var planeContainer: NotchWidgetPlaneContainer?
+    /// The closed panel's content, hidden but still in the window so the next open reuses it.
+    private var parkedPlaneContainer: NotchWidgetPlaneContainer?
+    private var parkedPlaneRelease: Task<Void, Never>?
+    /// How long a closed panel stays mounted. Past this it leaves the window, so widgets
+    /// stop updating in the background and the next open pays the full mount once.
+    private static let parkedPlaneLifetime: TimeInterval = 30
     private var chromeHosts: [NotchChromeSlot: NotchHostedContentView] = [:]
     private var chromePieces: [NotchChromeSlot: NotchChromePiece] = [:]
 
@@ -119,7 +125,8 @@ final class NotchStageView: NSView {
         engine.addRenderer(
             self,
             render: { [weak self] frame in self?.render(frame) },
-            animate: { [weak self] timeline in self?.animate(timeline) }
+            animate: { [weak self] timeline in self?.animate(timeline) },
+            cancel: { [weak self] in self?.cancelTimeline() }
         )
     }
 
@@ -147,6 +154,7 @@ final class NotchStageView: NSView {
         regionStage.tearDown()
         satelliteStage.tearDown()
         removePlane()
+        discardParkedPlane()
         for host in chromeHosts.values { host.removeFromSuperview() }
         chromeHosts.removeAll()
         chromePieces.removeAll()
@@ -224,7 +232,9 @@ final class NotchStageView: NSView {
             style.glass?.shadow.opacity = CGFloat(signals.surfaceShadowOpacity)
         }
         surfaceStyle = style
-        surface.apply(style, engine: engine, shadowAnimation: nil)
+        // The shadow's radius and offset differ between the hover and open states; easing between them keeps
+        // the shadow from snapping when the state flips mid-morph.
+        surface.apply(style, engine: engine, shadowAnimation: .notchMorphTiming(.easeInOut, duration: 0.3))
 
         applyRegions(content)
         satelliteStage.apply(content.satellites, layout: content.layout.satelliteLayout)
@@ -333,8 +343,9 @@ final class NotchStageView: NSView {
             if !content.planeFollowsOutline { releaseChromeFollow() }
             return
         }
+        let parked = takeParkedPlane(for: plane)
         removePlane()
-        let container = NotchWidgetPlaneContainer(plane: plane)
+        let container = parked ?? NotchWidgetPlaneContainer(plane: plane)
         container.entranceStiffness = content.planeEntranceStiffness
         container.entranceDamping = content.planeEntranceDamping
         container.followsOutline = content.planeFollowsOutline
@@ -343,6 +354,11 @@ final class NotchStageView: NSView {
             if let timeline = engine.activeTimeline {
                 container.animateFollow(timeline, outlines: timeline.frames.map { $0.values.size })
             }
+        }
+        if parked != nil {
+            container.resume()
+            planeContainer = container
+            return
         }
         let chromeHostIDs = Set(chromeHosts.values.map(ObjectIdentifier.init))
         if let lowestChrome = clip.subviews.first(where: { chromeHostIDs.contains(ObjectIdentifier($0)) }) {
@@ -394,10 +410,33 @@ final class NotchStageView: NSView {
 
     private func removePlane() {
         guard let container = planeContainer else { return }
-        container.detachPlane()
-        container.removeFromSuperview()
         planeContainer = nil
+        discardParkedPlane()
+        container.park()
+        parkedPlaneContainer = container
+        parkedPlaneRelease = Task { @MainActor [weak self, weak container] in
+            try? await Task.sleep(for: .seconds(Self.parkedPlaneLifetime))
+            guard !Task.isCancelled, let self, let container, self.parkedPlaneContainer === container else { return }
+            self.discardParkedPlane()
+        }
         revealRegionsAtRest()
+    }
+
+    private func takeParkedPlane(for plane: NotchWidgetPlane) -> NotchWidgetPlaneContainer? {
+        guard let parked = parkedPlaneContainer, parked.plane === plane, parked.superview === clip else { return nil }
+        parkedPlaneRelease?.cancel()
+        parkedPlaneRelease = nil
+        parkedPlaneContainer = nil
+        return parked
+    }
+
+    private func discardParkedPlane() {
+        parkedPlaneRelease?.cancel()
+        parkedPlaneRelease = nil
+        guard let parked = parkedPlaneContainer else { return }
+        parkedPlaneContainer = nil
+        parked.detachPlane()
+        parked.removeFromSuperview()
     }
 
     private func applyChrome(_ pieces: [NotchChromeSlot: NotchChromePiece]) {
@@ -405,6 +444,7 @@ final class NotchStageView: NSView {
             if let piece = pieces[slot] {
                 let root = environmentWrapped(piece.view)
                 let host: NotchHostedContentView
+                var created = false
                 if let existing = chromeHosts[slot] {
                     host = existing
                 } else {
@@ -412,8 +452,9 @@ final class NotchStageView: NSView {
                     host.onFittingSizeChange = { [weak self] in self?.positionChrome() }
                     clip.addSubview(host, positioned: .above, relativeTo: nil)
                     chromeHosts[slot] = host
+                    created = true
                 }
-                let appearing = !host.isPresented
+                let appearing = created || !host.isPresented
                 chromePieces[slot] = piece
                 host.setHitTestable(piece.hitTestable)
                 host.setRootView(root, key: piece.key)
@@ -421,10 +462,15 @@ final class NotchStageView: NSView {
                     if slot == .hud { host.apply(signals.hud, animation: nil) }
                     positionChrome(slot: slot, host: host, in: presentedRect, settled: true)
                     host.present(fadeDuration: piece.fade.inDuration, curve: piece.fade.curve)
-                    if planeContainer?.followsOutline == true {
+                    if slot == .islandBar {
+                        // The bar's content rides the bar's own emergence, not the panel's arrival: the plane
+                        // follower would hold it hidden until the outline is nearly full size, then pop it in.
+                        syncIslandBarContent()
+                    } else if planeContainer?.followsOutline == true {
                         CATransaction.begin()
                         CATransaction.setDisableActions(true)
                         host.followView.layer?.opacity = 0
+                        if let timeline = engine.activeTimeline { followPlane(host, timeline) }
                         CATransaction.commit()
                     }
                 }
@@ -432,7 +478,9 @@ final class NotchStageView: NSView {
                 let fade = chromePieces[slot]?.fade ?? .icons
                 host.dismiss(fadeDuration: fade.outDuration, curve: fade.curve) { [weak self, weak host] in
                     guard let self, let host, self.chromeHosts[slot] === host, !host.isPresented else { return }
-                    host.park()
+                    // The header keeps its views while hidden: the next open with the same content key reuses
+                    // them instead of rebuilding and re-measuring the whole group.
+                    host.park(keepingContent: true)
                     self.chromePieces[slot] = nil
                 }
             }
@@ -553,6 +601,7 @@ final class NotchStageView: NSView {
         for (slot, host) in chromeHosts where host.isPresented {
             positionChrome(slot: slot, host: host, in: rect, settled: !frame.isMoving)
         }
+        followPlanePerFrame(outline: rect.size)
         regionStage.position(in: rect, settled: !frame.isMoving, scale: backingScale)
         satelliteStage.render(frame.values, outline: rect, final: engine.activeTimeline == nil)
         if let layer = islandBarContentLayer {
@@ -561,6 +610,20 @@ final class NotchStageView: NSView {
             layer.opacity = islandBarContentOpacity(height: rect.height)
             CATransaction.commit()
         }
+    }
+
+    private func syncIslandBarContent() {
+        guard let layer = islandBarContentLayer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.opacity = islandBarContentOpacity(height: presentedRect.height)
+        if let timeline = engine.activeTimeline, timeline.frames.count > 1 {
+            let opacities = timeline.frames.map {
+                NSNumber(value: islandBarContentOpacity(height: NotchMorphGeometry.outlineRect(for: $0, in: band).height))
+            }
+            layer.add(timeline.animation("opacity", values: opacities, on: layer), forKey: "islandBar.opacity")
+        }
+        CATransaction.commit()
     }
 
     private func clipRect(_ rect: CGRect, values: NotchMorphValues) -> CGRect {
@@ -586,7 +649,7 @@ final class NotchStageView: NSView {
     private func islandBarContentOpacity(height: CGFloat) -> Float {
         guard let shape = surfaceStyle?.shape else { return 1 }
         let presence = shape.islandBarPresence(height: height)
-        let t = min(1, max(0, (presence - 0.35) / 0.55))
+        let t = min(1, max(0, (presence - 0.2) / 0.65))
         return Float(t * t * (3 - 2 * t))
     }
 
@@ -653,14 +716,56 @@ final class NotchStageView: NSView {
             hideRegionsBehindPanel()
         }
 
-        if let plane = planeContainer, plane.followsOutline, plane.bounds.height > 48 {
-            for (slot, host) in chromeHosts where chromePieces[slot] != nil && !host.isHidden {
-                host.follower.animate(
-                    timeline, outlines: sizes, layoutSize: plane.bounds.size,
-                    scalesContent: false, blurHeight: host.frame.height
-                )
-            }
+        for (slot, host) in chromeHosts where chromePieces[slot] != nil && !host.isHidden && slot != .islandBar {
+            followPlane(host, timeline)
         }
+    }
+
+    /// The engine stopped playing its timeline and now renders every frame itself
+    /// (`NotchMorphEngine.abandonTimeline`). Its keyframes would otherwise keep covering the per-frame
+    /// geometry until they ran out, holding the clip at the old outline, and followers it drove would
+    /// stay hidden at the old outline's size and skip the per-frame follow.
+    private func cancelTimeline() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let layer = clip.layer {
+            for key in ["morph.bounds", "morph.position", "morph.cornerRadius"] { layer.removeAnimation(forKey: key) }
+        }
+        for host in chromeHosts.values {
+            host.layer?.removeAnimation(forKey: "morph.position")
+            if host.follower.isDriving { host.follower.reset() }
+        }
+        islandBarContentLayer?.removeAnimation(forKey: "islandBar.opacity")
+        regionStage.cancelTimeline()
+        satelliteStage.cancelTimeline()
+        planeContainer?.cancelFollow()
+        if let activityHost, activityHost.follower.isDriving { activityHost.follower.reset() }
+        CATransaction.commit()
+    }
+
+    /// The header's counterpart of the plane's `followOutline` for frames the engine renders itself
+    /// (a glass surface has no `animate`, so its opens never get a timeline). Without it the header
+    /// kept the hidden hold from `applyChrome` until the plane detached, ~0.75 s into the open.
+    private func followPlanePerFrame(outline: CGSize) {
+        guard engine.activeTimeline == nil, let plane = planeContainer, plane.followsOutline,
+              plane.bounds.width > 1, plane.bounds.height > 48 else { return }
+        let scale = min(outline.width / plane.bounds.width, outline.height / plane.bounds.height)
+        let opacity = Float(NotchOutlineFollower.smoothstep(0.18, 0.5, scale))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (slot, host) in chromeHosts where host.isPresented && chromePieces[slot] != nil && slot != .islandBar {
+            guard !host.follower.isDriving, let layer = host.followView.layer, layer.opacity != opacity else { continue }
+            layer.opacity = opacity
+        }
+        CATransaction.commit()
+    }
+
+    private func followPlane(_ host: NotchHostedContentView, _ timeline: NotchMorphTimeline) {
+        guard let plane = planeContainer, plane.followsOutline, plane.bounds.height > 48 else { return }
+        host.follower.animate(
+            timeline, outlines: timeline.frames.map { $0.values.size }, layoutSize: plane.bounds.size,
+            scalesContent: false, blurHeight: host.frame.height, measuresBothAxes: true
+        )
     }
 
     private func playRegionPanelMorph(_ timeline: NotchMorphTimeline, rects: [CGRect], sizes: [CGSize]) -> Bool {
@@ -817,6 +922,13 @@ final class NotchOutlineFollower {
         return max(0.01, outline.width / layout.width)
     }
 
+    static func farthestAxisScale(outline: CGSize, layout: CGSize) -> CGFloat {
+        guard layout.width > 1, layout.height > 1 else { return 1 }
+        let width = max(0.01, outline.width / layout.width)
+        let height = max(0.01, outline.height / layout.height)
+        return abs(log(width)) >= abs(log(height)) ? width : height
+    }
+
     static func blurLimit(forHeight height: CGFloat) -> CGFloat {
         min(maximumBlurRadius, max(9, height * 0.28))
     }
@@ -838,11 +950,16 @@ final class NotchOutlineFollower {
         layoutSize: CGSize,
         scalesContent: Bool = true,
         blurHeight: CGFloat? = nil,
-        crossFadeSpan: CGFloat? = nil
+        crossFadeSpan: CGFloat? = nil,
+        measuresBothAxes: Bool = false
     ) {
         guard let layer, outlines.count == timeline.frames.count, outlines.count > 1,
               layoutSize.width > 1, layoutSize.height > 1 else { return }
-        let scales = outlines.map { Self.scale(outline: $0, layout: layoutSize) }
+        let scales = outlines.map {
+            measuresBothAxes
+                ? Self.farthestAxisScale(outline: $0, layout: layoutSize)
+                : Self.scale(outline: $0, layout: layoutSize)
+        }
         let first = scales[0]
         let last = scales[scales.count - 1]
         var span = max(abs(log(first)), abs(log(last)), crossFadeSpan ?? 0)

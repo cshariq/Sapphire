@@ -469,6 +469,11 @@ private struct BatterySetupStepView: View {
                 .padding(.horizontal, 50)
 
             VStack(spacing: 15) {
+                ModernOnboardingRow(iconName: "bolt.batteryblock.fill", iconColor: .yellow, title: "Manage Charging", description: "Let Sapphire control charging. Off leaves it to macOS; battery stats work either way.") {
+                    SettingsSwitch(isOn: $settings.settings.batteryManagementEnabled)
+                }
+
+                Group {
                 ModernOnboardingRow(iconName: "battery.100.bolt", iconColor: .green, title: "Set Charge Limit", description: "Prevent wear by stopping charging at a lower level. 80% is recommended.") {
                     Picker("", selection: chargeLimitBinding) {
                         Text("80%").tag(80)
@@ -487,6 +492,10 @@ private struct BatterySetupStepView: View {
                 ModernOnboardingRow(iconName: "thermometer.medium", iconColor: .red, title: "Enable Heat Protection", description: "Pauses charging if the battery gets too hot.") {
                     SettingsSwitch(isOn: $settings.settings.heatProtectionEnabled)
                 }
+                }
+                .disabled(!settings.settings.batteryManagementEnabled)
+                .opacity(settings.settings.batteryManagementEnabled ? 1 : 0.45)
+                .animation(.default, value: settings.settings.batteryManagementEnabled)
             }
             .padding(50)
 

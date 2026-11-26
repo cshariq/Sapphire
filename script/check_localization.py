@@ -20,9 +20,9 @@ CATALOGS = {
     "widget": ROOT / "SapphireAndroidWidgets/Localizable.xcstrings",
 }
 # Every catalog must carry Simplified Chinese. Any other language that appears in a
-# catalog (currently Traditional Chinese) must then be complete for every entry.
+# catalog must then be complete for every entry.
 REQUIRED_TRANSLATIONS = ("zh-Hans",)
-COMPILED_LANGUAGES = ("en", "zh-Hans", "zh-Hant")
+COMPILED_LANGUAGES = ("en", "zh-Hans", "zh-Hant", "de", "es", "fr", "it", "ja", "ko", "pt-BR", "ru")
 # Swift extraction uses object, integer and floating-point printf arguments.
 # A space after % is deliberately not a flag: ordinary labels include “100% charge”.
 FORMAT = re.compile(r"%(?:(?P<position>\d+)\$)?[-+#0]*\d*(?:\.\d+)?(?P<length>hh|ll|[hlLzjtq])?(?P<type>[@diuoxXfFeEgGaAcCsSp%])")
@@ -80,6 +80,10 @@ def validate_catalog(catalog):
         for language, values in translated_units.items():
             for path, translated in values.items():
                 source = english.get(path)
+                if source is None and len(path) >= 3 and path[-2] == "plural":
+                    # Languages with more plural categories than English (e.g. Russian few/many)
+                    # take their arguments from English "other".
+                    source = english.get(path[:-1] + ("other",))
                 if source is None and len(english) == 1:
                     source = next(iter(english.values()))
                 if source is None:

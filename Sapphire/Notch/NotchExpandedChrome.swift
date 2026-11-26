@@ -129,15 +129,21 @@ struct NotchChromeIconGroup: View {
     let context: NotchExpandedChrome.Context
 
     @ObservedSettings private var settings: SettingsObserver
+    @State private var isBlipHovered = false
 
     var body: some View {
         let buttons = NotchExpandedChrome.split(settings.settings.notchButtonOrder)
+        let types = side == .leading ? buttons.leading : buttons.trailing
+        let hasBlip = settings.settings.intelligenceEnabled && types.contains(.intelligence)
         let group = HStack(spacing: 0) {
-            ForEach(side == .leading ? buttons.leading : buttons.trailing) { buttonType in
+            if hasBlip && side == .trailing { NotchBlipSlack(isHovered: isBlipHovered) }
+            ForEach(types) { buttonType in
                 NotchChromeButton(type: buttonType, context: context)
             }
+            if hasBlip && side == .leading { NotchBlipSlack(isHovered: isBlipHovered) }
         }
         .fixedSize(horizontal: true, vertical: false)
+        .environment(\.notchBlipHovered, $isBlipHovered)
 
         Group {
             switch side {
@@ -271,9 +277,9 @@ private struct NotchChromeButton: View {
             }
         case .caffeine:
             if settings.settings.caffeinateEnabled {
-                SubtleIconButton(systemName: caffeineManager.isActive ? "cup.and.heat.waves.fill" : "cup.and.heat.waves", action: { caffeineManager.toggle() }, horizontalPadding: 6)
+                SubtleIconButton(systemName: caffeineManager.isActive ? "cup.and.heat.waves.fill" : "cup.and.heat.waves", action: { NotchCaffeinateHoldMenu.shared.toggleUnlessHeld(caffeineManager) }, horizontalPadding: 6)
                     .offset(y: -2)
-                    .contextMenu { NotchCaffeinateMenu(caffeineManager: caffeineManager) }
+                    .caffeinateMenu(caffeineManager)
             }
         case .battery:
             if settings.settings.batteryEstimatorEnabled {
@@ -309,7 +315,7 @@ private struct NotchChromeButton: View {
 struct NotchCaffeinateMenu: View {
     @ObservedObject var caffeineManager: CaffeineManager
 
-    private static let durations: [(label: LocalizedStringKey, minutes: Double)] = [
+    static let durations: [(label: String, minutes: Double)] = [
         ("15 Minutes", 15), ("30 Minutes", 30), ("1 Hour", 60), ("2 Hours", 120), ("4 Hours", 240), ("8 Hours", 480)
     ]
 
@@ -327,6 +333,75 @@ struct NotchCaffeinateMenu: View {
             Divider()
             Button("Turn Off") { caffeineManager.stop() }
         }
+    }
+}
+
+extension View {
+    /// Right-click or press-and-hold opens the one-off Keep Awake timer menu. Pair it with
+    /// `NotchCaffeinateHoldMenu.toggleUnlessHeld` as the tap action so a hold doesn't also toggle.
+    func caffeinateMenu(_ caffeineManager: CaffeineManager) -> some View {
+        contextMenu { NotchCaffeinateMenu(caffeineManager: caffeineManager) }
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: NotchCaffeinateHoldMenu.holdDuration)
+                    .onEnded { _ in NotchCaffeinateHoldMenu.shared.present(for: caffeineManager) }
+            )
+    }
+}
+
+/// SwiftUI's contextMenu only opens on right-click, so a hold pops an equivalent NSMenu while
+/// the mouse is still down - releasing over an item picks it, like a classic held menu.
+@MainActor
+final class NotchCaffeinateHoldMenu: NSObject {
+    static let shared = NotchCaffeinateHoldMenu()
+    static let holdDuration: Double = 0.45
+
+    private var suppressTap = false
+    private var actions: [() -> Void] = []
+
+    func toggleUnlessHeld(_ caffeineManager: CaffeineManager) {
+        guard !suppressTap else { return }
+        caffeineManager.toggle()
+    }
+
+    func present(for caffeineManager: CaffeineManager) {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        actions.removeAll()
+
+        if caffeineManager.isActive, let endsAt = caffeineManager.timeoutEndsAt {
+            let status = NSMenuItem(title: "Awake until \(endsAt.formatted(date: .omitted, time: .shortened))", action: nil, keyEquivalent: "")
+            status.isEnabled = false
+            menu.addItem(status)
+        }
+        menu.addItem(.sectionHeader(title: "Keep Awake For"))
+        for duration in NotchCaffeinateMenu.durations {
+            addItem(duration.label, to: menu) { caffeineManager.start(forMinutes: duration.minutes) }
+        }
+        addItem("Until Turned Off", to: menu) { caffeineManager.startIndefinitely() }
+        if caffeineManager.isActive {
+            menu.addItem(.separator())
+            addItem("Turn Off", to: menu) { caffeineManager.stop() }
+        }
+
+        // The release that ends the hold can still reach the button after the menu closes.
+        suppressTap = true
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.suppressTap = false
+        }
+    }
+
+    private func addItem(_ title: String, to menu: NSMenu, action: @escaping () -> Void) {
+        let item = NSMenuItem(title: title, action: #selector(runAction(_:)), keyEquivalent: "")
+        item.target = self
+        item.tag = actions.count
+        actions.append(action)
+        menu.addItem(item)
+    }
+
+    @objc private func runAction(_ sender: NSMenuItem) {
+        guard actions.indices.contains(sender.tag) else { return }
+        actions[sender.tag]()
     }
 }
 
@@ -358,6 +433,36 @@ private struct NotchBatteryInfoSlot: View {
     }
 }
 
+/// The Blip pill's expansion width, parked at the notch-side end of its icon group. It collapses
+/// on the same spring the pill grows on, so the group's width never changes: items between the
+/// pill and the notch slide over instead of the hosting view re-fitting and re-centering the bar,
+/// which slid the pill out from under the cursor and looped hover on/off.
+private struct NotchBlipSlack: View {
+    @Environment(GeminiLiveManager.self) private var geminiLiveManager
+    let isHovered: Bool
+
+    var body: some View {
+        Text(geminiLiveManager.isSessionRunning ? "Stop" : "Blip")
+            .font(.system(size: NotchConfiguration.geminiButtonTextFontSize, weight: .semibold))
+            .fixedSize()
+            .padding(.trailing, NotchConfiguration.geminiButtonActiveHorizontalPadding)
+            .hidden()
+            .frame(width: isHovered ? 0 : nil)
+            .allowsHitTesting(false)
+    }
+}
+
+private struct NotchBlipHoveredKey: EnvironmentKey {
+    static let defaultValue: Binding<Bool> = .constant(false)
+}
+
+private extension EnvironmentValues {
+    var notchBlipHovered: Binding<Bool> {
+        get { self[NotchBlipHoveredKey.self] }
+        set { self[NotchBlipHoveredKey.self] = newValue }
+    }
+}
+
 private struct NotchIntelligenceControls: View {
     @Environment(GeminiLiveManager.self) private var geminiLiveManager
     @ObservedObject private var microphoneManager = MicrophoneUsageManager.shared
@@ -366,7 +471,8 @@ private struct NotchIntelligenceControls: View {
     let onOpenBlipHub: () -> Void
     let onOpenAgentS: () -> Void
 
-    @State private var isHovered = false
+    @Environment(\.notchBlipHovered) private var isHoveredBinding
+    private var isHovered: Bool { isHoveredBinding.wrappedValue }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -383,14 +489,18 @@ private struct NotchIntelligenceControls: View {
         let activeFill = Color.purple.opacity(0.8)
         let stopFill = Color.red
 
-        return Button {
+        let title = isLiveRunning ? "Stop" : "Blip"
+        let titleFont = Font.system(size: NotchConfiguration.geminiButtonTextFontSize, weight: .semibold)
+        let trailingPadding = NotchConfiguration.geminiButtonActiveHorizontalPadding
+
+        let button = Button {
             if isLiveRunning {
                 geminiLiveManager.stopSession()
             } else {
                 onOpenBlipHub()
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 Image(systemName: isLiveRunning ? "stop.fill" : "sparkle")
                     .font(.system(
                         size: isHovered
@@ -407,19 +517,22 @@ private struct NotchIntelligenceControls: View {
                         ),
                         value: isHovered
                     )
+                    .frame(width: baseSize, height: baseSize)
 
-                if isHovered {
-                    Text(isLiveRunning ? "Stop" : "Blip")
-                        .font(.system(size: NotchConfiguration.geminiButtonTextFontSize, weight: .semibold))
-                        .fixedSize()
-                        .foregroundColor(.white)
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
-                }
+                // Always in the tree and revealed by width, so a hover flicker can't strand a
+                // half-finished insertion/removal transition ("✦lip" ghosts).
+                Text(title)
+                    .font(titleFont)
+                    .fixedSize()
+                    .foregroundColor(.white)
+                    .padding(.trailing, trailingPadding)
+                    .opacity(isHovered ? 1 : 0)
+                    .frame(width: isHovered ? nil : 0, alignment: .leading)
             }
-            .padding(.horizontal, isHovered ? NotchConfiguration.geminiButtonActiveHorizontalPadding : 0)
-            .frame(width: isHovered ? nil : baseSize, height: baseSize)
+            .frame(height: baseSize)
             .background(isHovered ? (isLiveRunning ? stopFill : activeFill) : nil)
             .clipShape(Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -427,10 +540,12 @@ private struct NotchIntelligenceControls: View {
                 response: NotchConfiguration.geminiButtonSpringResponse,
                 dampingFraction: 1
             )) {
-                isHovered = hovering
+                isHoveredBinding.wrappedValue = hovering
             }
         }
         .simultaneousGesture(TapGesture(count: 2).onEnded(onOpenAgentS))
+
+        return button
     }
 
     @ViewBuilder

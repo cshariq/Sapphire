@@ -315,7 +315,8 @@ enum StandardActivityData: Equatable {
     case reminder(reminder: EKReminder)
     case lockScreen
     case unlocked
-    case capsLock
+    case capsLock(isOn: Bool)
+    case snapDragHint
     case updateAvailable(version: String)
     case stats(payload: StatsPayload)
     case sports(payload: SportsPayload, bottom: SportsBottomContentType = .none)
@@ -347,7 +348,8 @@ enum StandardActivityData: Equatable {
         case let (.hud(a), .hud(b)): return a == b
         case (.lockScreen, .lockScreen): return true
         case (.unlocked, .unlocked): return true
-        case (.capsLock, .capsLock): return true
+        case let (.capsLock(a), .capsLock(b)): return a == b
+        case (.snapDragHint, .snapDragHint): return true
         case let (.updateAvailable(a), .updateAvailable(b)): return a == b
         case let (.stats(a), .stats(b)): return a == b
         case let (.sports(a, bottomA), .sports(b, bottomB)): return a == b && bottomA == bottomB

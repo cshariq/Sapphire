@@ -3,7 +3,6 @@
   "strings": {
     "%@": {
       "comment": "User-supplied Android widget label; preserve verbatim.",
-      "shouldTranslate": false,
       "localizations": {
         "en": {
           "stringUnit": {
@@ -22,8 +21,57 @@
             "state": "translated",
             "value": "%@"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
         }
-      }
+      },
+      "shouldTranslate": false
     },
     "+%lld": {
       "localizations": {
@@ -44,10 +92,59 @@
             "state": "translated",
             "value": "+%lld"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld"
+          }
         }
       }
     },
     "Add an Android widget in Sapphire": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -65,6 +162,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "在 Sapphire 中加入 Android 小工具"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android-Widget in Sapphire hinzufügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir un widget de Android en Sapphire"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un widget Android dans Sapphire"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiungi un widget Android in Sapphire"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SapphireでAndroidウィジェットを追加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire에서 Android 위젯 추가"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar um widget Android no Sapphire"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавьте виджет Android в Sapphire"
           }
         }
       }
@@ -88,6 +233,54 @@
             "state": "translated",
             "value": "從手機加入"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Von Ihrem Smartphone hinzufügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir desde tu teléfono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter depuis votre téléphone"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiungi dal telefono"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンから追加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "휴대전화에서 추가"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar do seu celular"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить с телефона"
+          }
         }
       }
     },
@@ -109,6 +302,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "從手機加入小工具"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widgets von Ihrem Smartphone hinzufügen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir widgets desde tu teléfono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter des widgets depuis votre téléphone"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiungi widget dal telefono"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンからウィジェットを追加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "휴대전화에서 위젯 추가"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar widgets do seu celular"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавьте виджеты с телефона"
           }
         }
       }
@@ -132,6 +373,54 @@
             "state": "translated",
             "value": "正在從手機加入；如有提示，請在手機上允許"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird von Ihrem Smartphone hinzugefügt – erlauben Sie es dort, falls Sie gefragt werden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadiendo desde tu teléfono: permítelo allí si se te pide"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajout depuis votre téléphone — autorisez-le là-bas si on vous le demande"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiunta dal telefono: consentila lì se richiesto"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンから追加中 — 求められたら、スマートフォンで許可してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "휴대전화에서 추가하는 중입니다. 요청되면 휴대전화에서 허용하십시오"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionando do seu celular — permita lá, se solicitado"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавление с телефона — разрешите это на телефоне, если потребуется"
+          }
         }
       }
     },
@@ -153,6 +442,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "集中顯示已加入 Mac 的 Android 手機小工具。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Widgets Ihres Android-Smartphones, die sich auf Ihrem Mac befinden, zusammen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos los widgets de tu teléfono Android que están en tu Mac, juntos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous les widgets de votre téléphone Android présents sur votre Mac, réunis."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tutti insieme, i widget del telefono Android presenti sul Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MacにあるAndroidスマートフォンのウィジェットをすべてまとめて表示します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac에 있는 Android 휴대전화의 모든 위젯을 한곳에 모았습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos os widgets do seu celular Android que estão no seu Mac, juntos."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все виджеты вашего телефона Android, которые есть на вашем Mac, вместе."
           }
         }
       }
@@ -176,6 +513,54 @@
             "state": "translated",
             "value": "Android 小工具"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android-Widget"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget de Android"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Androidウィジェット"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 위젯"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виджет Android"
+          }
         }
       }
     },
@@ -197,6 +582,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Android 小工具（選擇）"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android-Widget (auswählen)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget de Android (elegir)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android (choisir)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android (scegli)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Androidウィジェット(選択)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 위젯(선택)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android (escolher)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виджет Android (выбрать)"
           }
         }
       }
@@ -220,6 +653,54 @@
             "state": "translated",
             "value": "Android 小工具"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android-Widgets"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widgets de Android"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widgets Android"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Androidウィジェット"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 위젯"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widgets Android"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виджеты Android"
+          }
         }
       }
     },
@@ -241,6 +722,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Android 小工具"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android-Widget"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget de Android"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Androidウィジェット"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 위젯"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget Android"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виджет Android"
           }
         }
       }
@@ -264,6 +793,54 @@
             "state": "translated",
             "value": "選擇一個從已配對 Android 手機鏡像的小工具。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie ein von Ihrem gekoppelten Android-Smartphone gespiegeltes Widget."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un widget duplicado desde tu teléfono Android emparejado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez un widget recopié depuis votre téléphone Android associé."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli un widget rispecchiato dal telefono Android associato."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング済みのAndroidスマートフォンからミラーリングされたウィジェットを選択します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페어링된 Android 휴대전화에서 미러링된 위젯을 선택하십시오."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha um widget espelhado do seu celular Android pareado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите виджет, продублированный с вашего парного телефона Android."
+          }
         }
       }
     },
@@ -285,6 +862,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "編輯此小工具，從手機選擇一個"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bearbeiten Sie dieses Widget, um eines von Ihrem Smartphone auszuwählen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edita este widget para elegir uno de tu teléfono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifiez ce widget pour en choisir un depuis votre téléphone"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifica questo widget per sceglierne uno dal telefono"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このウィジェットを編集して、スマートフォンから1つ選択してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 위젯을 편집하여 휴대전화의 위젯 중 하나를 선택하십시오"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edite este widget para escolher um do seu celular"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Измените этот виджет, чтобы выбрать один с телефона"
           }
         }
       }
@@ -308,6 +933,54 @@
             "state": "translated",
             "value": "來自 Android 手機的即時小工具。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live-Widget von Ihrem Android-Smartphone."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget en directo de tu teléfono Android."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget en direct de votre téléphone Android."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget live dal telefono Android."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Androidスマートフォンのライブウィジェット。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 휴대전화의 라이브 위젯입니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget ao vivo do seu celular Android."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Живой виджет с вашего телефона Android."
+          }
         }
       }
     },
@@ -329,6 +1002,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mac 上的小工具"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf Ihrem Mac"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En tu Mac"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur votre Mac"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sul Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac上"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내 Mac에서"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No seu Mac"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "На вашем Mac"
           }
         }
       }
@@ -352,10 +1073,59 @@
             "state": "translated",
             "value": "從已配對的 Android 手機選擇任意小工具；若 Mac 上還沒有這個小工具，會從手機加入。"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie ein beliebiges Widget Ihres gekoppelten Android-Smartphones – wenn Sie eines wählen, das noch nicht auf Ihrem Mac ist, wird es vom Smartphone hinzugefügt."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige cualquier widget de tu teléfono Android emparejado; si eliges uno que aún no está en tu Mac, se añade desde el teléfono."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez n’importe quel widget de votre téléphone Android associé — en choisir un qui n’est pas encore sur votre Mac l’ajoute depuis le téléphone."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli qualsiasi widget dal telefono Android associato: se ne scegli uno che non è ancora sul Mac, viene aggiunto dal telefono."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング済みのAndroidスマートフォンから任意のウィジェットを選択します。まだMacにないウィジェットを選ぶと、スマートフォンから追加されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페어링된 Android 휴대전화의 위젯을 선택하십시오. 아직 Mac에 없는 위젯을 선택하면 휴대전화에서 추가됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha qualquer widget do seu celular Android pareado — escolher um que ainda não está no seu Mac o adiciona a partir do celular."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите любой виджет с вашего парного телефона Android — выбор того, которого ещё нет на Mac, добавит его с телефона."
+          }
         }
       }
     },
     "Place a live widget from your paired Android phone on the Mac desktop or in Notification Center.": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -373,6 +1143,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "將已配對 Android 手機上的即時小工具放到 Mac 桌面或通知中心。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Platzieren Sie ein Live-Widget von Ihrem gekoppelten Android-Smartphone auf dem Mac-Schreibtisch oder im Mitteilungszentrum."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coloca un widget en directo de tu teléfono Android emparejado en el escritorio del Mac o en el Centro de notificaciones."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Placez un widget en direct de votre téléphone Android associé sur le bureau du Mac ou dans le Centre de notifications."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inserisci un widget live del telefono Android associato sulla scrivania del Mac o nel Centro Notifiche."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング済みのAndroidスマートフォンのライブウィジェットを、Macのデスクトップまたは通知センターに配置します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페어링된 Android 휴대전화의 라이브 위젯을 Mac 데스크탑 또는 알림 센터에 배치합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coloque um widget ao vivo do seu celular Android pareado na mesa do Mac ou na Central de Notificações."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разместите живой виджет с вашего парного телефона Android на рабочем столе Mac или в Центре уведомлений."
           }
         }
       }
@@ -396,6 +1214,54 @@
             "state": "translated",
             "value": "此小工具已從手機移除"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Widget wurde von Ihrem Smartphone entfernt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este widget se ha eliminado de tu teléfono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce widget a été retiré de votre téléphone"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Questo widget è stato rimosso dal telefono"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このウィジェットはスマートフォンから削除されました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 위젯이 휴대전화에서 제거되었습니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este widget foi removido do seu celular"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот виджет был удалён с вашего телефона"
+          }
         }
       }
     },
@@ -417,6 +1283,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用此處的「Android 小工具（選擇）」，或手機 Sapphire App 中的「Mac 上的小工具」。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verwenden Sie hier „Android-Widget (auswählen)“ oder „Widgets auf Ihrem Mac“ in der Sapphire-Smartphone-App."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa aquí “Widget de Android (elegir)” o Widgets en tu Mac en la app de teléfono de Sapphire."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisez « Widget Android (choisir) » ici, ou Widgets sur votre Mac dans l’app Sapphire du téléphone."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa qui “Widget Android (scegli)” oppure Widget sul tuo Mac nell'app Sapphire per telefono."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで“Androidウィジェット(選択)”を使用するか、SapphireのスマートフォンAppの“Macのウィジェット”を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여기서 “Android 위젯(선택)”을 사용하거나 Sapphire 휴대전화 앱의 내 Mac의 위젯을 사용하십시오."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use “Widget Android (escolher)” aqui, ou Widgets no seu Mac no app do celular do Sapphire."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Используйте здесь «Виджет Android (выбрать)» или «Виджеты» на вашем Mac в приложении Sapphire для телефона."
           }
         }
       }
@@ -440,6 +1354,54 @@
             "state": "translated",
             "value": "正在等待手機連線"
           }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warten auf Ihr Smartphone"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperando a tu teléfono"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de votre téléphone"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In attesa del telefono"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンを待機中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "휴대전화를 기다리는 중"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aguardando seu celular"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ожидание телефона"
+          }
         }
       }
     },
@@ -461,6 +1423,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "小工具"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウィジェット"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위젯"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widget"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виджет"
           }
         }
       }

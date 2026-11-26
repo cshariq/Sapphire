@@ -21,7 +21,6 @@ Sapphire/Services/FinanceAPIService.swift
 Sapphire/Services/SportsFinanceContentProvider.swift
 Sapphire/Services/SportsTeamCatalog.swift
 Sapphire/Services/SportLayoutRegistry.swift
-Sapphire/App/GoogleService-Info.plist
 /Sapphire/Services/ConnectedAccounts
 /Sapphire/Services/Monitoring
 /Tools
@@ -29,12 +28,15 @@ Sapphire/Services/Weather/WeatherAPIKey.swift
 /Sapphire/Services/CircleToSearch
 /Sapphire/Services/Gemini
 /Sapphire/Widgets/CircleToSearch
-/Sapphire/Services/Gemini
 /output
 collect_sapphire_files.py
 
 .tmp/
 Sapphire/Services/FaceID/Models/PassiveLiveness.enc
+Sapphire/Services/FaceID/Models/PassiveLiveness_v4.mlpackage/
+Sapphire/Services/FaceID/Models/PassiveLiveness_v4.enc
+Sapphire/Services/FaceID/Models/PassiveLiveness_v4_ANE.mlpackage/
+Sapphire/Services/FaceID/Models/PassiveLiveness_v4_ANE.enc
 Sapphire.xcodeproj/project.xcworkspace/xcuserdata/Shariq.xcuserdatad/UserInterfaceState.xcuserstate
 Sapphire.xcodeproj/xcuserdata/Shariq.xcuserdatad/xcschemes/xcschememanagement.plist
 /Sapphire/Services/AppLock
@@ -91,3 +93,25 @@ Sapphire.xcodeproj/xcuserdata/Shariq.xcuserdatad/xcschemes/xcschememanagement.pl
 /SapphireTests/AppStorageModelsTests.swift
 /SapphireTests/ClipboardPickerPositioningTests.swift
 /SapphireTests/ContinuityStatusProtocolTests.swift
+/SapphireTests/SystemEnhanceWindowFeaturesTests.swift
+Sapphire/Services/FaceID/Models/PassiveLiveness_v4_ANE.mlmodelc/
+*.mlmodelkey
+
+# Build products and local scratch
+SapphireVM/.build/
+/Sapphire.pkg
+*.profraw
+/.tmp-*/
+/FractalLab/Legacy/
+/*.dia
+
+# Private: Fractal Windows (Ultra) engine, its test rig and settings, and the Continuity share extension.
+# Public builds use Sapphire/Stubs instead.
+/Sapphire/Services/Fractal/
+/FractalLab/
+/Sapphire/App Settings/FractalWindowsSettingsView.swift
+/SapphireShare/
+
+# Local Claude Code / editor config
+/.claude/
+/COMMIT_MSG.txt

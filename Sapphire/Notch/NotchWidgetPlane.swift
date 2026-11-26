@@ -16,6 +16,8 @@ struct NotchWidgetPlaneInputs: Equatable {
     var notchBandHeight: CGFloat = 0
     var displayScale: CGFloat = 2
     var notchDisplayWidth: CGFloat = 0
+    var isFloatingIsland = false
+    var widgetRowWidthLimit: CGFloat = 0
     var presentationGeneration = 0
 }
 
@@ -90,6 +92,8 @@ struct NotchWidgetPlaneRoot: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .coordinateSpace(.notchDrag)
             .environment(\.notchDisplayWidth, inputs.notchDisplayWidth)
+            .environment(\.notchWidgetRowWidthLimit, inputs.widgetRowWidthLimit)
+            .environment(\.notchIsFloatingIsland, inputs.isFloatingIsland)
             .notchHostEnvironment(bandHeight: inputs.notchBandHeight, displayScale: inputs.displayScale)
             .modifier(NotchWidgetPlaneGraphProbe())
     }
@@ -120,6 +124,9 @@ final class NotchWidgetPlane: ObservableObject {
     private var content: AnyView?
     private var inputs = NotchWidgetPlaneInputs()
     private var measuredSize: Binding<CGSize> = .constant(.zero)
+    /// The last size the content reported, kept so a reopened panel can report it again
+    /// without replacing the root view.
+    private var lastIdealSize: CGSize?
     private var dragCancellable: AnyCancellable?
 
     private weak var outerView: NSView?
@@ -145,8 +152,15 @@ final class NotchWidgetPlane: ObservableObject {
         let content = makeContent()
         self.content = content
         self.inputs = inputs
-        self.measuredSize = measuredSize
-        let host = NotchWidgetPlaneHostingView(rootView: NotchWidgetPlaneRoot(content: content, inputs: inputs, measuredSize: measuredSize, state: state))
+        let recording = Binding<CGSize>(
+            get: { measuredSize.wrappedValue },
+            set: { [weak self] size in
+                self?.lastIdealSize = size
+                measuredSize.wrappedValue = size
+            }
+        )
+        self.measuredSize = recording
+        let host = NotchWidgetPlaneHostingView(rootView: NotchWidgetPlaneRoot(content: content, inputs: inputs, measuredSize: recording, state: state))
         host.sizingOptions = []
         host.autoresizingMask = [.width, .height]
         host.frame = mountView.bounds
@@ -165,6 +179,22 @@ final class NotchWidgetPlane: ObservableObject {
         newInputs.presentationGeneration = inputs.presentationGeneration
         if newInputs.notchDisplayWidth <= 0 { newInputs.notchDisplayWidth = inputs.notchDisplayWidth }
         apply(newInputs)
+    }
+
+    /// Reports the content's known size again after the owner reset its copy on open.
+    /// Replacing the root view (`didPresent`) gets the same report, but makes SwiftUI
+    /// recompute the whole panel's preferences and layout, about 20 ms per open.
+    /// Returns false when no size is known yet, so the caller falls back to `didPresent`.
+    func reportMeasuredSizeAgain() -> Bool {
+        guard hostingView != nil, let known = lastIdealSize, known.width > 1, known.height > 1 else { return false }
+        DispatchQueue.main.async { [weak self] in
+            // Read again here: the content may have reported a newer size in the meantime.
+            guard let self, let size = self.lastIdealSize, size.width > 1, size.height > 1 else { return }
+            let current = self.measuredSize.wrappedValue
+            guard abs(current.width - size.width) > 0.5 || abs(current.height - size.height) > 0.5 else { return }
+            self.measuredSize.wrappedValue = size
+        }
+        return true
     }
 
     func didPresent() {
@@ -360,6 +390,35 @@ final class NotchWidgetPlaneContainer: NSView {
         plane.planeDidMove()
     }
 
+    /// Hides the panel content but leaves it in the window. Taking the hosting view out of
+    /// the window makes SwiftUI rebuild its responder tree, lay everything out again and
+    /// redraw every text on the next open, which was most of the CPU cost of opening.
+    func park() {
+        entranceGeneration += 1
+        entranceBeginTime = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let layer = entranceLayer {
+            layer.removeAllAnimations()
+            layer.sublayerTransform = CATransform3DIdentity
+            layer.opacity = 1
+            layer.filters = nil
+        }
+        CATransaction.commit()
+        resetOutlineFollowing()
+        plane.clearReportedFrames()
+        isHidden = true
+    }
+
+    /// Shows parked content again, the same way a first mount presents it.
+    func resume() {
+        isHidden = false
+        guard plane.mountView.superview === self else { return }
+        plane.state.switchGate.suppressedUntil = CACurrentMediaTime() + 0.1
+        if !plane.reportMeasuredSizeAgain() { plane.didPresent() }
+        if !followsOutline { runEntrance() }
+    }
+
     func detachPlane() {
         entranceGeneration += 1
         entranceBeginTime = nil
@@ -393,6 +452,12 @@ final class NotchWidgetPlaneContainer: NSView {
             return
         }
         follower.animate(timeline, outlines: outlines, layoutSize: bounds.size)
+    }
+
+    /// Stops following a timeline the engine abandoned, so the next frame's `followOutline` applies.
+    func cancelFollow() {
+        guard follower.isDriving else { return }
+        follower.reset()
     }
 
     func followOutline(_ outline: CGRect, isMoving: Bool) {

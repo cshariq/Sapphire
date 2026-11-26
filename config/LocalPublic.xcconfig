@@ -1,7 +1,8 @@
 // Local build of the public sources; use existing public substitute interfaces.
 SAPPHIRE_LOCAL_BUILD = YES
 // Gemini's real implementation is tracked in this public checkout.
-SAPPHIRE_APP_EXCLUDED_SOURCES = GeminiLiveManagerStub.swift
+// Gemini Live is private (Sapphire/Services/Gemini is gitignored), so its stub is built here.
+SAPPHIRE_APP_EXCLUDED_SOURCES =
 // Select the public File Provider placeholder without changing full-checkout paths.
 SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE = PublicExtensionStubs/FileProvider/Info.plist
 SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS =

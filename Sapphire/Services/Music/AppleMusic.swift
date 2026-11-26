@@ -38,6 +38,9 @@ final class AppleMusicManager {
 
     var isMusicKitAuthorized: Bool { musicKit.isAuthorized }
 
+    /// Authorized and subscribed, so catalog search/playback works. Library-only accounts are false.
+    var hasCatalogSubscription: Bool { musicKit.isAuthorized && musicKit.account.canPlayCatalogContent }
+
     func requestAuthorization() async {
         await musicKit.requestAuthorization()
     }

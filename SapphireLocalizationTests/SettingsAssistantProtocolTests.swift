@@ -78,6 +78,7 @@ final class SettingsAssistantProtocolTests: XCTestCase {
         (.shortcuts, "Shortcuts", "Manage quick actions and shortcut surfaces shown in Sapphire."),
         (.keyboardShortcuts, "Keyboard Shortcuts", "Reference page listing every keyboard shortcut in Sapphire — global hotkeys, snap zones, and in-app shortcuts."),
         (.snapZones, "Snap Zones", "Configure window snapping behavior, layouts, and zone actions."),
+        (.fractalWindows, "Fractal Windows", "Dock real windows into spaces nested as deep as you like, then pinch and zoom between them."),
         (.audio, "Audio", "Audio adjustments, EQ, and per-app volume adjustments."),
         (.battery, "Battery", "Battery widgets, history, charging preferences, and power-related controls."),
         (.bluetooth, "Bluetooth", "Bluetooth device integrations, visibility, and connection behavior."),

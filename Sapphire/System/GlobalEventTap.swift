@@ -50,6 +50,7 @@ enum EventTapDispatchPlan {
         finished: (EventTapDispatchEntry, _ elapsed: UInt64, _ finishedAt: UInt64) -> Void = { _, _, _ in }
     ) -> EventTapDecision {
         guard type.rawValue < 64 else { return .pass }
+        guard event.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.agentInput else { return .pass }
         let typeBit = CGEventMask(1) << CGEventMask(type.rawValue)
         for entry in entries where entry.mask & typeBit != 0 {
             let startedAt = clock()

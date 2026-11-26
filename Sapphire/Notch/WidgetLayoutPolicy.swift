@@ -67,11 +67,93 @@ enum WidgetLayoutPolicy {
         return total
     }
 
+    // MARK: Optical insets (floating island)
+
+    /// Side padding a widget carries inside its own frame. The island trims it at a row's ends so the card's
+    /// left and right margins match its top and bottom ones.
+    static func builtInSidePadding(for widget: WidgetType) -> CGFloat {
+        switch widget {
+        case .weather, .focusSession, .timer: return 10
+        default: return 0
+        }
+    }
+
+    /// Empty space a widget usually leaves above and below its content (minimum-height frames, centred content).
+    /// These are measured estimates; widgets not listed are treated as filling their frame.
+    static func builtInVerticalSlack(for widget: WidgetType) -> CGFloat {
+        switch widget {
+        case .battery, .storage, .weather, .timer: return 6
+        case .calendar, .focusSession: return 8
+        default: return 0
+        }
+    }
+
+    static func rowVerticalSlack(for widgets: [WidgetType]) -> CGFloat {
+        widgets.map(builtInVerticalSlack(for:)).min() ?? 0
+    }
+
+    // MARK: Rows (floating island)
+
+    static let islandRowWidthLimit: CGFloat = 640
+
+    /// A single-row island keeps to about half the display, so it reads as an island rather than a second menu bar.
+    static let islandSingleRowDisplayFraction: CGFloat = 0.55
+    static let islandSingleRowMaximumAspect: CGFloat = 7
+    static let islandSingleRowBaseHeight: CGFloat = 110
+    static let islandSingleRowMaximumExtraPadding: CGFloat = 14
+
+    static func islandSingleRowWidth(notchDisplayWidth: CGFloat) -> CGFloat {
+        let width = notchDisplayWidth > 0 ? notchDisplayWidth : (NSScreen.main?.frame.width ?? 1440)
+        return max(360, width * islandSingleRowDisplayFraction)
+    }
+
+    /// Extra vertical padding that keeps a long single row from looking like a thin ribbon.
+    static func islandSingleRowExtraPadding(for widgets: [WidgetType], showDividers: Bool) -> CGFloat {
+        let width = totalWidth(for: widgets, showDividers: showDividers)
+        let wanted = (width / islandSingleRowMaximumAspect - islandSingleRowBaseHeight) / 2
+        return min(islandSingleRowMaximumExtraPadding, max(0, wanted)).rounded()
+    }
+    static let rowSpacing: CGFloat = 14
+    static let maximumRows = 3
+
+    /// Splits the widgets into rows of similar width, keeping their order. A menu that fits the limit stays one row.
+    static func rows(for widgets: [WidgetType], maxRowWidth: CGFloat, showDividers: Bool) -> [[WidgetType]] {
+        guard maxRowWidth > 0, widgets.count > 1 else { return widgets.isEmpty ? [] : [widgets] }
+        let total = totalWidth(for: widgets, showDividers: showDividers)
+        guard total > maxRowWidth else { return [widgets] }
+        let count = min(maximumRows, widgets.count, Int((total / maxRowWidth).rounded(.up)))
+
+        var best: [[WidgetType]] = [widgets]
+        var bestWidth = CGFloat.greatestFiniteMagnitude
+        func split(from start: Int, rowsLeft: Int, rows: [[WidgetType]], widest: CGFloat) {
+            guard widest < bestWidth else { return }
+            if rowsLeft == 1 {
+                let row = Array(widgets[start...])
+                let width = max(widest, totalWidth(for: row, showDividers: showDividers))
+                if width < bestWidth {
+                    bestWidth = width
+                    best = rows + [row]
+                }
+                return
+            }
+            for end in (start + 1)...(widgets.count - rowsLeft + 1) {
+                let row = Array(widgets[start..<end])
+                split(
+                    from: end, rowsLeft: rowsLeft - 1, rows: rows + [row],
+                    widest: max(widest, totalWidth(for: row, showDividers: showDividers))
+                )
+            }
+        }
+        split(from: 0, rowsLeft: count, rows: [], widest: 0)
+        return best
+    }
+
     static func fittingWidgets(
         from ordered: [WidgetType],
         availableWidth: CGFloat,
         showDividers: Bool,
-        bypassSpaceLimit: Bool = false
+        bypassSpaceLimit: Bool = false,
+        countsMusic: Bool = false
     ) -> [WidgetType] {
         if bypassSpaceLimit {
             return ordered.filter { $0 != .agent }
@@ -81,7 +163,7 @@ enum WidgetLayoutPolicy {
         var result: [WidgetType] = []
 
         for widget in ordered where widget != .agent {
-            let width = capacityWidth(for: widget)
+            let width = countsMusic ? estimatedWidth(for: widget) : capacityWidth(for: widget)
 
             let spacing: CGFloat
             if result.isEmpty {

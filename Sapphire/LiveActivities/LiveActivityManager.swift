@@ -45,6 +45,8 @@ private struct LiveActivityEvaluationSettings: Equatable {
     let showPersistentStatsLiveActivity: Bool
     let statThresholds: [StatType: StatThreshold]
     let batteryLiveActivityEnabled: Bool
+    let batteryPluggedInActivityEnabled: Bool
+    let batteryChargingActivityEnabled: Bool
     let showPersistentBatteryLiveActivity: Bool
     let lowBatteryNotificationPercentage: Int
     let lowBatteryNotificationSoundEnabled: Bool
@@ -109,6 +111,8 @@ private struct LiveActivityEvaluationSettings: Equatable {
         showPersistentStatsLiveActivity = settings.showPersistentStatsLiveActivity
         statThresholds = settings.statThresholds
         batteryLiveActivityEnabled = settings.batteryLiveActivityEnabled
+        batteryPluggedInActivityEnabled = settings.batteryPluggedInActivityEnabled
+        batteryChargingActivityEnabled = settings.batteryChargingActivityEnabled
         showPersistentBatteryLiveActivity = settings.showPersistentBatteryLiveActivity
         lowBatteryNotificationPercentage = settings.lowBatteryNotificationPercentage
         lowBatteryNotificationSoundEnabled = settings.lowBatteryNotificationSoundEnabled
@@ -373,7 +377,18 @@ class LiveActivityManager {
     @ObservationIgnored private var tickerFetchTick = 0
     @ObservationIgnored private var sportsFinanceWatchTimer: Timer?
     @ObservationIgnored private var lastKnownFocusStatus: FocusStatus?
-    @ObservationIgnored private var hasShownPluggedInAlert = false
+    /// Power connection phases the battery activity announces separately: connecting
+    /// power and the battery actually drawing a charge are distinct events.
+    private enum BatteryPowerPhase { case unplugged, pluggedIn, charging }
+    /// Highest phase already shown (dismissed) for the current connection; reset on unplug.
+    @ObservationIgnored private var announcedPowerPhase: BatteryPowerPhase = .unplugged
+    /// Phase of the plug/charge activity most recently offered, recorded on dismissal.
+    @ObservationIgnored private var offeredPowerPhase: BatteryPowerPhase?
+    @ObservationIgnored private var pluggedInSince: Date?
+    @ObservationIgnored private var pluggedInGraceWork: DispatchWorkItem?
+    /// isCharging usually trails isPluggedIn by a second or so; wait this long before
+    /// calling a fresh connection "Plugged In" so a normal plug-in shows only "Charging".
+    private static let pluggedInChargeGrace: TimeInterval = 2.5
     @ObservationIgnored private var hasShownLowBatteryAlert = false
     @ObservationIgnored private var hasShownCurrentEyeBreak = false
     @ObservationIgnored private var lastShownDesktopNumber: Int?
@@ -401,6 +416,7 @@ class LiveActivityManager {
     @ObservationIgnored private var capsLockTapToken: GlobalEventTap.Token?
     @ObservationIgnored private var lastCapsLockState = false
     @ObservationIgnored private var capsLockActivationID: UUID?
+    @ObservationIgnored private var capsLockActivationIsOn = true
     @ObservationIgnored public var intelligenceVM: IntelligenceNotchViewModel?
 
     // MARK: - Dependencies
@@ -436,6 +452,7 @@ class LiveActivityManager {
         self.activityCheckers = [
             .lockScreen: { self.checkForLockScreenActivity() },
             .capsLock: { self.checkForCapsLockActivity() },
+            .snapDragHint: { self.checkForSnapDragHint() },
             .updateAvailable: { self.checkForUpdateAvailable() },
             .nearbyShare: { self.checkForNearbyTransfer() },
             .geminiLive: { self.checkForGeminiLive() },
@@ -499,7 +516,7 @@ class LiveActivityManager {
     private func showDebugActivity(_ name: String?) {
         let candidate: (ActivityType, LiveActivityContent, TimeInterval?)?
         switch name {
-        case "capsLock": candidate = (.capsLock, .standard(data: .capsLock, id: UUID().uuidString), nil)
+        case "capsLock": candidate = (.capsLock, .standard(data: .capsLock(isOn: true), id: UUID().uuidString), nil)
         case "unlocked": candidate = (.unlocked, .standard(data: .unlocked, id: "unlock_activity"), nil)
         case "music": candidate = checkForMusic()
         case "weather": candidate = checkForPersistentWeather() ?? checkForWeather()
@@ -835,6 +852,7 @@ class LiveActivityManager {
             .mapToVoid(),
             focusModeManager.$currentStatus.removeDuplicates().mapToVoid(),
             UpdateChecker.shared.$status.removeDuplicates().mapToVoid(),
+            WindowDragState.shared.$isNotchHintActive.removeDuplicates().mapToVoid(),
             batteryStatusManager.$currentState.removeDuplicates().mapToVoid(),
             ContinuityManager.shared.valuePublisher(\.connectivity)
                 .map { snapshot -> ContinuityConnectivitySnapshot in
@@ -1063,6 +1081,7 @@ class LiveActivityManager {
 
     private static let absoluteHighPriorityActivities: [ActivityType] = [
         .lockScreen,
+        .snapDragHint,
         .capsLock,
         .otp,
         .notification,
@@ -1210,7 +1229,8 @@ class LiveActivityManager {
             winningCandidate = candidate
         }
 
-        let satellites = satelliteCandidates(
+        // The drag hint is brief; don't push the other activities out into bubbles for it.
+        let satellites = winningCandidate?.0 == .snapDragHint ? satelliteActivities : satelliteCandidates(
             winner: winningCandidate,
             order: chain(finalEvaluationOrder, [ActivityType.devActivity, .focusSession]),
             candidate: candidate
@@ -1234,6 +1254,7 @@ class LiveActivityManager {
     static let nonSatelliteActivityTypes: Set<ActivityType> = [
         .none, .persistentBattery, .persistentStats, .persistentWeather,
         .systemHUD, .unlocked, .lockScreen, .notification, .continuityNotification, .otp,
+        .snapDragHint,
     ]
     static let maximumSatellites = NotchSatelliteSlot.count
 
@@ -1443,7 +1464,12 @@ class LiveActivityManager {
         case .battery:
             if let state = self.batteryMonitor.currentState {
                 if self.isBelowLowBatteryThreshold(state) { self.hasShownLowBatteryAlert = true }
-                else if state.isPluggedIn { self.hasShownPluggedInAlert = true }
+                else if state.isPluggedIn, let offered = self.offeredPowerPhase {
+                    if offered == .charging || self.announcedPowerPhase == .unplugged {
+                        self.announcedPowerPhase = offered
+                    }
+                }
+                self.offeredPowerPhase = nil
             }
         case .focusModeChange: self.lastShownFocusModeID = self.focusModeManager.currentStatus.identifier
         case .eyeBreak: self.hasShownCurrentEyeBreak = true
@@ -1572,12 +1598,18 @@ class LiveActivityManager {
         )
     }
 
+    private func checkForSnapDragHint() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
+        guard WindowDragState.shared.isNotchHintActive,
+              WindowDragState.shared.showsNotchHintActivity else { return nil }
+        return (.snapDragHint, .standard(data: .snapDragHint, id: "snap_drag_hint"), nil)
+    }
+
     private func checkForCapsLockActivity() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         guard settingsModel.current.capsLockLiveActivityEnabled,
               let activationID = capsLockActivationID else { return nil }
         return (
             .capsLock,
-            .standard(data: .capsLock, id: activationID),
+            .standard(data: .capsLock(isOn: capsLockActivationIsOn), id: activationID),
             1.5
         )
     }
@@ -1620,7 +1652,8 @@ class LiveActivityManager {
     private func handleCapsLockStateChange(_ capsOn: Bool) {
         guard capsOn != lastCapsLockState else { return }
         lastCapsLockState = capsOn
-        guard capsOn, settingsModel.current.capsLockLiveActivityEnabled else { return }
+        guard settingsModel.current.capsLockLiveActivityEnabled else { return }
+        capsLockActivationIsOn = capsOn
         capsLockActivationID = UUID()
         lastEvalTime = 0
         evaluateAndDisplayActivity(allowImmediateDismiss: true)
@@ -1661,7 +1694,16 @@ class LiveActivityManager {
         let timeRemaining = batteryEstimator.estimatedTimeRemaining
 
         if state.level > settings.lowBatteryNotificationPercentage { hasShownLowBatteryAlert = false }
-        if !state.isPluggedIn { hasShownPluggedInAlert = false }
+        let powerPhase: BatteryPowerPhase = !state.isPluggedIn ? .unplugged : (state.isCharging ? .charging : .pluggedIn)
+        if powerPhase == .unplugged {
+            announcedPowerPhase = .unplugged
+            offeredPowerPhase = nil
+            pluggedInSince = nil
+            pluggedInGraceWork?.cancel()
+            pluggedInGraceWork = nil
+        } else if pluggedInSince == nil {
+            pluggedInSince = Date()
+        }
 
         let isLow = isBelowLowBatteryThreshold(state)
 
@@ -1695,14 +1737,17 @@ class LiveActivityManager {
             }
         }
 
-        if state.isPluggedIn && !isLow && !hasShownPluggedInAlert {
+        if !isLow, let phase = powerPhaseToAnnounce(powerPhase) {
+            pluggedInGraceWork?.cancel()
+            pluggedInGraceWork = nil
+            offeredPowerPhase = phase
             let data = StandardActivityData.battery(
                 state: state,
                 style: settings.batteryNotificationStyle,
                 timeRemaining: timeRemaining,
                 systemState: systemState
             )
-            let id = "plugged_in_alert_\(state.isCharging)"
+            let id = phase == .charging ? "charging_started_alert" : "plugged_in_alert"
             return (.battery, .standard(data: data, id: id), 5.0)
         }
 
@@ -1743,6 +1788,37 @@ class LiveActivityManager {
         }
 
         return nil
+    }
+
+    /// Which plug/charge activity (if any) is due. "Charging" fires whenever the battery
+    /// starts drawing a charge on this connection, even after "Plugged In" was shown;
+    /// "Plugged In" fires once per connection, after a short grace so a normal plug-in
+    /// that begins charging a moment later doesn't flash it first.
+    private func powerPhaseToAnnounce(_ phase: BatteryPowerPhase) -> BatteryPowerPhase? {
+        let settings = settingsModel.settings
+        switch phase {
+        case .unplugged:
+            return nil
+        case .charging:
+            guard settings.batteryChargingActivityEnabled, announcedPowerPhase != .charging else { return nil }
+            return .charging
+        case .pluggedIn:
+            guard settings.batteryPluggedInActivityEnabled, announcedPowerPhase == .unplugged else { return nil }
+            // Already on screen (or being replaced): keep it without re-waiting the grace.
+            if offeredPowerPhase == .pluggedIn, currentActivity == .battery { return .pluggedIn }
+            let elapsed = Date().timeIntervalSince(pluggedInSince ?? Date())
+            if elapsed >= Self.pluggedInChargeGrace { return .pluggedIn }
+            if pluggedInGraceWork == nil {
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.pluggedInGraceWork = nil
+                    self.evaluateAndDisplayActivity()
+                }
+                pluggedInGraceWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + (Self.pluggedInChargeGrace - elapsed) + 0.05, execute: work)
+            }
+            return nil
+        }
     }
 
     private func checkForPersistentBattery() -> (ActivityType, LiveActivityContent, TimeInterval?)? {

@@ -11,6 +11,7 @@ import SwiftUI
 import AVFoundation
 import Accelerate
 import CoreImage
+import os
 import CryptoKit
 import Darwin
 import IOKit
@@ -624,6 +625,10 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
         guard frameCounter > FaceIDConfig.sensorWarmupFramesToDrop else { return }
 
+        if !isRegistrationMode, let luma = FaceIDIlluminator.meanLuma(of: pixelBuffer) {
+            DispatchQueue.main.async { FaceIDIlluminator.shared.report(luma: luma) }
+        }
+
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
 
         if !isRegistrationMode {
@@ -951,12 +956,24 @@ final class FaceIDDataStore {
     private var centroids: [FaceInputOrder: [Float]] = [:]
 
     private let secureFileURL: URL
-    let ciContext = CIContext(options: [
-        .useSoftwareRenderer: false,
-        .cacheIntermediates: false,
-        .highQualityDownsample: true,
-        .workingColorSpace: NSNull()
-    ])
+    /// Built on first use (or by the model prewarm), not at launch: creating it maps Core Image's Metal
+    /// archives and costs several MB that an install without Face ID never needs.
+    private static let renderContext: CIContext = {
+        let context = CIContext(options: [
+            .useSoftwareRenderer: false,
+            .cacheIntermediates: false,
+            .highQualityDownsample: true,
+            .workingColorSpace: NSNull()
+        ])
+        renderContextExists.withLock { $0 = true }
+        return context
+    }()
+    private static let renderContextExists = OSAllocatedUnfairLock(initialState: false)
+    var ciContext: CIContext { Self.renderContext }
+
+    func prewarmRenderContext() {
+        _ = Self.renderContext
+    }
     private let bufferLock = NSLock()
 
     private var facePixels = [UInt8](repeating: 0, count: 112 * 112 * 4)
@@ -993,7 +1010,7 @@ final class FaceIDDataStore {
         defer { bufferLock.unlock() }
         faceArray = nil
         faceArrayFlipped = nil
-        ciContext.clearCaches()
+        if Self.renderContextExists.withLock({ $0 }) { ciContext.clearCaches() }
     }
 
     func verify(currentEmbedding: FaceAuthEmbedding) -> Float {
@@ -1498,6 +1515,7 @@ final class FaceIDModelManager {
         lock.unlock()
 
         let loadStart = Date()
+        FaceIDDataStore.shared.prewarmRenderContext()
         purgeLegacyModelCopies()
         let embedding = needEmbedding ? (self.loadModelWithIO("ArcFace", preferredOutput: "embedding") ??
                                          self.loadModelWithIO("ModernFace", preferredOutput: "embedding") ??

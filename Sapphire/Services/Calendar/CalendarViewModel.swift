@@ -90,15 +90,17 @@ class InteractiveCalendarViewModel: ObservableObject {
     private func generateMonthGrid(using calendar: Calendar? = nil) {
         let calendar = calendar ?? currentCalendar
         guard let monthInterval = calendar.dateInterval(of: .month, for: selectedDate),
-              let firstDayOfMonth = monthInterval.start as Date?,
-              let firstWeekday = calendar.ordinality(of: .weekday, in: .weekOfYear, for: firstDayOfMonth) else {
+              let firstDayOfMonth = monthInterval.start as Date? else {
             return
         }
 
         var grid: [MonthGridItem] = []
 
-        // ordinality already counts from calendar.firstWeekday, so day one of the week is 1.
-        let paddingDays = firstWeekday - 1
+        // Column of the 1st, counted from the configured start of week. (ordinality(of: .weekday,
+        // in: .weekOfYear) is already relative to firstWeekday, so subtracting it again shifted
+        // Monday-start grids one column left.)
+        let weekday = calendar.component(.weekday, from: firstDayOfMonth)
+        let paddingDays = (weekday - calendar.firstWeekday + 7) % 7
         if paddingDays > 0 {
             for i in (0..<paddingDays).reversed() {
                 if let date = calendar.date(byAdding: .day, value: -i - 1, to: firstDayOfMonth) {

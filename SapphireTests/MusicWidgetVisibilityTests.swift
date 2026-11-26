@@ -8,58 +8,68 @@ import XCTest
 @testable import Sapphire
 
 final class MusicWidgetVisibilityTests: XCTestCase {
-    func testHideWhenNotPlayingUsesPlaybackInsteadOfCachedTrackMetadata() {
-        XCTAssertFalse(MusicWidgetVisibilityPolicy.shouldShow(
-            isEnabled: true,
-            hideWhenNotPlaying: true,
-            isPlaying: false,
-            hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false,
-            hideSpotifyWhenAppClosed: false,
-            isLoggedIntoSpotify: false,
-            isSpotifyOnlySource: false,
-            isSpotifyAppRunning: true
-        ))
-
-        XCTAssertTrue(MusicWidgetVisibilityPolicy.shouldShow(
-            isEnabled: true,
-            hideWhenNotPlaying: true,
-            isPlaying: true,
-            hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false,
-            hideSpotifyWhenAppClosed: false,
-            isLoggedIntoSpotify: false,
-            isSpotifyOnlySource: false,
-            isSpotifyAppRunning: true
-        ))
+    private func shows(
+        _ visibility: MusicWidgetVisibility,
+        isEnabled: Bool = true,
+        isPlaying: Bool = false,
+        hasTrack: Bool = true,
+        isClosedSpotifyOnlySource: Bool = false
+    ) -> Bool {
+        MusicWidgetVisibilityPolicy.shouldShow(
+            isEnabled: isEnabled,
+            visibility: visibility,
+            isPlaying: isPlaying,
+            hasTrack: hasTrack,
+            isClosedSpotifyOnlySource: isClosedSpotifyOnlySource
+        )
     }
 
-    func testPausedSpotifyRuleCanHideWithoutGeneralPlaybackRule() {
-        XCTAssertFalse(MusicWidgetVisibilityPolicy.shouldShow(
-            isEnabled: true,
-            hideWhenNotPlaying: false,
-            isPlaying: false,
-            hidePausedSpotifyWhenIdle: true,
-            isSpotifyPausedWithNoOtherPlayback: true,
-            hideSpotifyWhenAppClosed: false,
-            isLoggedIntoSpotify: false,
-            isSpotifyOnlySource: false,
-            isSpotifyAppRunning: true
-        ))
+    func testAlwaysShowsEvenWithNothingLoaded() {
+        XCTAssertTrue(shows(.always, hasTrack: false))
+        XCTAssertTrue(shows(.always, hasTrack: true, isClosedSpotifyOnlySource: true))
+    }
+
+    func testWhenSongLoadedShowsPausedSongsButNotAnEmptyPlayer() {
+        XCTAssertTrue(shows(.whenSongLoaded, isPlaying: true))
+        XCTAssertTrue(shows(.whenSongLoaded, isPlaying: false, hasTrack: true))
+        XCTAssertFalse(shows(.whenSongLoaded, isPlaying: false, hasTrack: false))
+    }
+
+    func testWhenSongLoadedHidesTheLastSpotifyTrackAfterSpotifyQuits() {
+        XCTAssertFalse(shows(.whenSongLoaded, isPlaying: false, hasTrack: true, isClosedSpotifyOnlySource: true))
+        XCTAssertTrue(shows(.whenSongLoaded, isPlaying: true, hasTrack: true, isClosedSpotifyOnlySource: true))
+    }
+
+    func testWhilePlayingUsesPlaybackInsteadOfCachedTrackMetadata() {
+        XCTAssertFalse(shows(.whilePlaying, isPlaying: false, hasTrack: true))
+        XCTAssertTrue(shows(.whilePlaying, isPlaying: true))
     }
 
     func testDisabledWidgetNeverShows() {
-        XCTAssertFalse(MusicWidgetVisibilityPolicy.shouldShow(
-            isEnabled: false,
-            hideWhenNotPlaying: false,
-            isPlaying: true,
-            hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false,
-            hideSpotifyWhenAppClosed: false,
-            isLoggedIntoSpotify: false,
-            isSpotifyOnlySource: false,
-            isSpotifyAppRunning: true
-        ))
+        for visibility in MusicWidgetVisibility.allCases {
+            XCTAssertFalse(shows(visibility, isEnabled: false, isPlaying: true))
+        }
+    }
+
+    func testDefaultKeepsTheWidgetVisible() {
+        XCTAssertEqual(Settings().musicWidgetVisibility, .always)
+    }
+
+    func testLegacyToggleCombinationsMigrateToOneChoice() throws {
+        func migrated(_ legacy: [String: Bool]) throws -> MusicWidgetVisibility {
+            var dictionary = try XCTUnwrap(SettingsPersistence.encodeToDictionary(Settings()))
+            dictionary.removeValue(forKey: "musicWidgetVisibility")
+            for (key, value) in legacy { dictionary[key] = value }
+            let data = try JSONSerialization.data(withJSONObject: dictionary)
+            return try XCTUnwrap(SettingsPersistence.decodeFromPayload(data)).musicWidgetVisibility
+        }
+
+        XCTAssertEqual(try migrated([:]), .always)
+        XCTAssertEqual(try migrated(["persistMusicWidgetWhenPaused": true]), .always)
+        XCTAssertEqual(try migrated(["persistMusicWidgetWhenPaused": false]), .whenSongLoaded)
+        XCTAssertEqual(try migrated(["hideSpotifyWidgetWhenAppClosed": true]), .whenSongLoaded)
+        XCTAssertEqual(try migrated(["hideMusicWidgetWhenSpotifyPausedAndIdle": true]), .whilePlaying)
+        XCTAssertEqual(try migrated(["hideMusicWidgetWhenNotPlaying": true, "persistMusicWidgetWhenPaused": false]), .whilePlaying)
     }
 
     func testLayoutKeepsLookingForSmallerWidgetsAfterOneDoesNotFit() {

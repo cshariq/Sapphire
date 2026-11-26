@@ -73,47 +73,126 @@ struct MixerTapKey: Hashable, Comparable {
 // MARK: - Tap registry + live parameters
 
 final class MixerSharedState: @unchecked Sendable {
+    private struct Curve: Hashable {
+        var gains: [Double]
+        var bass: Double
+    }
+
     private let lock = NSLock()
     private var taps: [String: [String: AppTapController]] = [:]
     private var appParameters: [String: AppTapParameters] = [:]
     private var deviceParameters: [String: DeviceTapParameters] = [:]
+    private var headroomMode = EQHeadroomMode.fixed
+    private var activeOutputUIDs: Set<String> = []
+    private var deviceTrims: [String: Double] = [:]
+    private var peakBoostCache: [Curve: Double] = [:]
+
+    /// Each output's shared EQ pre-cut in dB whenever it changes (only non-empty in Raise Output Volume),
+    /// delivered off the lock on the calling thread.
+    var onDeviceTrims: (@Sendable ([String: Double]) -> Void)?
 
     func setAppParameters(_ parameters: AppTapParameters, for bundleID: String) {
-        lock.lock(); defer { lock.unlock() }
-        guard appParameters[bundleID] != parameters else { return }
-        appParameters[bundleID] = parameters
-        taps[bundleID]?.values.forEach { Self.apply(parameters, to: $0) }
-    }
-
-    func setDeviceParameters(_ parameters: DeviceTapParameters, forUID uid: String) {
-        lock.lock(); defer { lock.unlock() }
-        guard deviceParameters[uid] != parameters else { return }
-        deviceParameters[uid] = parameters
-        for tapMap in taps.values {
-            if let tap = tapMap[uid] { Self.apply(parameters, to: tap) }
+        mutate {
+            guard appParameters[bundleID] != parameters else { return }
+            appParameters[bundleID] = parameters
+            taps[bundleID]?.values.forEach { Self.apply(parameters, to: $0) }
         }
     }
 
-    func install(_ tap: AppTapController) {
+    func setDeviceParameters(_ parameters: DeviceTapParameters, forUID uid: String) {
+        mutate {
+            guard deviceParameters[uid] != parameters else { return }
+            deviceParameters[uid] = parameters
+            for tapMap in taps.values {
+                if let tap = tapMap[uid] { Self.apply(parameters, to: tap) }
+            }
+        }
+    }
+
+    func setHeadroomMode(_ mode: EQHeadroomMode) {
+        mutate { headroomMode = mode }
+    }
+
+    /// Outputs audio is currently sent to; their trims hold steady while apps start and stop playing.
+    func setActiveOutputs(_ uids: Set<String>) {
+        mutate { activeOutputUIDs = uids }
+    }
+
+    func trimmedOutputUIDs() -> Set<String> {
         lock.lock(); defer { lock.unlock() }
-        taps[tap.bundleID, default: [:]][tap.targetDeviceUID] = tap
-        Self.apply(appParameters[tap.bundleID] ?? AppTapParameters(), to: tap)
-        Self.apply(deviceParameters[tap.targetDeviceUID] ?? DeviceTapParameters(), to: tap)
+        return Set(deviceTrims.keys)
+    }
+
+    func install(_ tap: AppTapController) {
+        mutate {
+            taps[tap.bundleID, default: [:]][tap.targetDeviceUID] = tap
+            Self.apply(appParameters[tap.bundleID] ?? AppTapParameters(), to: tap)
+            Self.apply(deviceParameters[tap.targetDeviceUID] ?? DeviceTapParameters(), to: tap)
+        }
     }
 
     @discardableResult
     func remove(_ key: MixerTapKey) -> AppTapController? {
-        lock.lock(); defer { lock.unlock() }
-        let tap = taps[key.bundleID]?.removeValue(forKey: key.deviceUID)
-        if taps[key.bundleID]?.isEmpty == true { taps.removeValue(forKey: key.bundleID) }
+        var tap: AppTapController?
+        mutate {
+            tap = taps[key.bundleID]?.removeValue(forKey: key.deviceUID)
+            if taps[key.bundleID]?.isEmpty == true { taps.removeValue(forKey: key.bundleID) }
+        }
         return tap
     }
 
     func removeAll() -> [AppTapController] {
-        lock.lock(); defer { lock.unlock() }
-        let all = taps.values.flatMap(\.values)
-        taps.removeAll()
+        var all: [AppTapController] = []
+        mutate {
+            all = taps.values.flatMap(\.values)
+            taps.removeAll()
+        }
         return all
+    }
+
+    private func mutate(_ body: () -> Void) {
+        lock.lock()
+        body()
+        let changedTrims = refreshHeadroom()
+        lock.unlock()
+        if let changedTrims { onDeviceTrims?(changedTrims) }
+    }
+
+    /// In Raise Output Volume every app on an output shares the largest pre-cut any configured curve
+    /// there needs (whether or not that app is playing right now, so the trim, and the output volume
+    /// raised to match it, only move when an EQ is edited or audio switches outputs).
+    private func refreshHeadroom() -> [String: Double]? {
+        var trims: [String: Double] = [:]
+        if headroomMode == .raiseOutputVolume {
+            for uid in activeOutputUIDs.union(taps.values.flatMap(\.keys)) {
+                let device = deviceParameters[uid] ?? DeviceTapParameters()
+                let deviceGains = AudioEQ.normalize(device.eqGains)
+                var trim = peakBoost(Curve(gains: deviceGains, bass: device.bass))
+                for app in appParameters.values where app.appliesEQ(toDeviceUID: uid) {
+                    guard app.eqBass != 0 || app.eqGains.contains(where: { $0 != 0 }) else { continue }
+                    let curve = Curve(
+                        gains: zip(AudioEQ.normalize(app.eqGains), deviceGains).map { $0 + $1 },
+                        bass: app.eqBass + device.bass
+                    )
+                    trim = max(trim, peakBoost(curve))
+                }
+                if trim > 0 { trims[uid] = trim }
+            }
+        }
+        for tapMap in taps.values {
+            for (uid, tap) in tapMap { tap.updateEQHeadroom(headroomMode, trimDB: trims[uid] ?? 0) }
+        }
+        guard trims != deviceTrims else { return nil }
+        deviceTrims = trims
+        return trims
+    }
+
+    private func peakBoost(_ curve: Curve) -> Double {
+        if let cached = peakBoostCache[curve] { return cached }
+        let peak = GraphicEQDesigner.plan(gains: curve.gains, bass: curve.bass, sampleRate: 48000).peakBoostDB
+        if peakBoostCache.count > 64 { peakBoostCache.removeAll() }
+        peakBoostCache[curve] = peak
+        return peak
     }
 
     func tap(for key: MixerTapKey) -> AppTapController? {

@@ -75,6 +75,7 @@ struct QueueAndPlaylistsView: View {
     @State private var officialQueue: SpotifyQueue?
     @State private var playlists: [SpotifyPlaylist] = []
     @State private var appleMusicQueue: [AppleMusicManager.QueueTrack] = []
+    @State private var tidalPlaylists: [SpotifyPlaylist]?
 
     @State private var showSpotifyNotOpenAlert = false
     @State private var delayedRefreshTask: Task<Void, Never>?
@@ -89,7 +90,11 @@ struct QueueAndPlaylistsView: View {
     private var isSpotifyActive: Bool { musicManager.isSpotifySourceActive }
     private var isLoggedIn: Bool { musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated }
     private var hubPane: MusicHubPane { MusicHubPane(rawValue: selection) ?? .now }
-    private var showLoginGate: Bool { !isLoggedIn && !isAppleMusic && hubPane != .audio }
+    private var isOtherPlayer: Bool { musicManager.isOtherPlayerSourceActive }
+    private var isTidal: Bool { musicManager.prefersTidalHub }
+    private var showTidalPane: Bool { isTidal && hubPane != .audio }
+    private var showLoginGate: Bool { !isLoggedIn && !isAppleMusic && !isOtherPlayer && !isTidal && hubPane != .audio }
+    private var showOtherPlayerNote: Bool { !isLoggedIn && isOtherPlayer && !isTidal && hubPane != .audio }
 
     private var hubTabs: [MusicHubPane] {
         return MusicHubPane.allCases
@@ -133,7 +138,9 @@ struct QueueAndPlaylistsView: View {
     var body: some View {
         VStack(spacing: 15) {
             HStack(spacing: 10) {
-                if isAppleMusic {
+                if showTidalPane {
+                    EmptyView()
+                } else if isAppleMusic {
                     appleMusicHubPill
                 } else if isLoggedIn || hubPane == .audio {
                     musicHubUserPill
@@ -198,9 +205,13 @@ struct QueueAndPlaylistsView: View {
             }
 
             ZStack(alignment: .top) {
-                if showLoginGate {
+                if showTidalPane {
+                    tidalPane.transition(.opacity)
+                } else if showLoginGate {
                     LoginPromptView(navigationStack: $navigationStack)
                         .transition(.opacity)
+                } else if showOtherPlayerNote {
+                    otherPlayerNote.transition(.opacity)
                 } else {
                     switch hubPane {
                     case .now:
@@ -438,7 +449,110 @@ struct QueueAndPlaylistsView: View {
         }
     }
 
+    private var otherPlayerNote: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "music.note.list")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+            Text("\(musicManager.appName(for: musicManager.lastKnownBundleID)) is playing")
+                .font(.title3).bold()
+            Text("Queue, library and discover come from Spotify or Apple Music. Output devices still work from Audio.")
+                .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+            Button("Open Audio") { selection = MusicHubPane.audio.rawValue }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.white.opacity(0.12)))
+        }
+        .padding(30)
+        .frame(maxWidth: 420)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var isTidalOnScreen: Bool {
+        musicManager.title != nil && musicManager.lastKnownBundleID == DefaultMusicPlayer.tidal.bundleIdentifier
+    }
+
+    private var tidalPane: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 12) {
+                let isTidalPlaying = isTidalOnScreen && musicManager.isPlaying
+                Image(systemName: isTidalPlaying ? "waveform" : "music.note.list")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.secondary)
+                Text(isTidalPlaying ? "TIDAL is playing" : "TIDAL")
+                    .font(.title3).bold()
+                Text(isTidalPlaying
+                     ? "Queue and discover come from Spotify or Apple Music. Output devices still work from Audio."
+                     : isTidalOnScreen
+                        ? "Playback is paused. Open TIDAL or one of your playlists to carry on."
+                        : musicManager.title != nil
+                            ? "Another app is playing. Open TIDAL or one of your playlists to switch."
+                            : "Nothing is playing. Open TIDAL or one of your playlists to start.")
+                    .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+                HStack(spacing: 8) {
+                    tidalPaneButton("Open TIDAL") { DefaultMusicPlayer.tidal.open() }
+                    tidalPaneButton("Open Audio") { selection = MusicHubPane.audio.rawValue }
+                }
+            }
+            .padding(.top, 30)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+
+            materialExpressiveCard(title: "Your TIDAL Playlists", systemImage: "music.note.list", accent: MaterialChartPalette.primary) {
+                tidalPlaylistsList
+            }
+            .frame(width: 360)
+        }
+    }
+
+    @ViewBuilder
+    private var tidalPlaylistsList: some View {
+        if !musicManager.isTidalAPIAuthenticated {
+            Text("Log in to TIDAL in the Music section of Sapphire's settings to see your playlists here.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else if let tidalPlaylists, tidalPlaylists.isEmpty {
+            Text("No playlists in your TIDAL collection yet.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else if let tidalPlaylists {
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 8) {
+                    ForEach(tidalPlaylists) { playlist in
+                        PlaylistGridCard(playlist: playlist, isPlaying: false) { openTidalPlaylist(playlist) }
+                    }
+                }
+            }
+            .frame(maxHeight: 220)
+        } else {
+            ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+        }
+    }
+
+    private func tidalPaneButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.white.opacity(0.12)))
+    }
+
+    private func openTidalPlaylist(_ playlist: SpotifyPlaylist) {
+        let url = DefaultMusicPlayer.tidal.isAppInstalled
+            ? URL(string: "tidal://playlist/\(playlist.id)")
+            : URL(string: "https://tidal.com/browse/playlist/\(playlist.id)")
+        if let url { NSWorkspace.shared.open(url) }
+    }
+
     private func fetchData(for pane: MusicHubPane) async {
+        if isTidal {
+            if tidalPlaylists == nil, musicManager.isTidalAPIAuthenticated {
+                tidalPlaylists = await musicManager.tidalAPI.fetchPlaylists()
+            }
+            return
+        }
+
         if isAppleMusic {
             let apple = musicManager.appleMusic
             if !apple.isMusicKitAuthorized, apple.isMusicKitConfigured {

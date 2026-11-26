@@ -76,6 +76,7 @@ struct AppEQView: View {
                         .font(.system(size: 20, weight: .bold))
                 }
                 Spacer()
+                EQHeadroomPicker()
                 EQBandCountPicker(selection: $displayedBandCount)
             }
             .padding(.horizontal, 24)

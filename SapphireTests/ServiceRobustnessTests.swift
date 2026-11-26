@@ -228,6 +228,15 @@ struct ServiceRobustnessTests {
         #expect(result.removedLineCount == 1)
         #expect(String(decoding: result.keptData, as: UTF8.self).hasSuffix("not json\n"))
         #expect(BatteryDataLogger.pruneLog(result.keptData, cutoff: cutoff).removedLineCount == 0)
+
+        // The launch-time trim only reads the expired lines at the start and must agree with the full prune.
+        var ordered = Data("broken head\n".utf8)
+        ordered.append(payload)
+        let trimmed = try #require(BatteryDataLogger.pruneExpiredPrefix(ordered, cutoff: cutoff))
+        #expect(String(decoding: trimmed, as: UTF8.self).hasPrefix("broken head\n"))
+        #expect(BatteryDataLogger.pruneLog(trimmed, cutoff: cutoff).entries.count == 2)
+        #expect(BatteryDataLogger.pruneLog(trimmed, cutoff: cutoff).removedLineCount == 0)
+        #expect(BatteryDataLogger.pruneExpiredPrefix(trimmed, cutoff: cutoff) == nil)
     }
 
     // MARK: - Weather

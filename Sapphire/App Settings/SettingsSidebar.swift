@@ -21,7 +21,7 @@ extension SettingsSection {
             .init(id: "general", title: String(localized: "General"), sections: (includingOverview ? [.overview] : []) + [.general, .keyboardShortcuts, .bluetoothUnlock, .intelligence, .nearbyShare, .continuity]),
             .init(id: "notch", title: String(localized: "Notch"), sections: [.appearance, .widgets, .liveActivities, .appActivities, .fileProgress, .lockScreen, .notifications, .hud]),
             .init(id: "widgetsAndContent", title: String(localized: "Widgets & Content"), sections: [.music, .weather, .calendar, .sports, .finance, .battery, .audio, .bluetooth, .shortcuts, .fileShelf, .notes, .clipboard, .mirror, .caffeine]),
-            .init(id: "systemAndUtilities", title: String(localized: "System & Utilities"), sections: [.systemEnhance, .snapZones, .dockLayouts, .mediaOptimizer, .mouse, .monitoring, .devActivity, .emoji, .archives, .apps, .storage]),
+            .init(id: "systemAndUtilities", title: String(localized: "System & Utilities"), sections: [.systemEnhance, .snapZones, .fractalWindows, .dockLayouts, .mediaOptimizer, .mouse, .monitoring, .devActivity, .emoji, .archives, .apps, .storage]),
             .init(id: "focusAndSecurity", title: String(localized: "Focus & Security"), sections: [.eyeBreak, .focusSession, .appLock]),
             .init(id: "about", title: "", sections: [.about])
         ]

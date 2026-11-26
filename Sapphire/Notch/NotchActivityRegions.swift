@@ -19,6 +19,10 @@ struct NotchActivityRegions {
     var trailing: AnyView
     var bottom: AnyView?
     var identity: AnyHashable
+    /// Keeps this activity's pieces alive while another activity covers it, so coming back
+    /// updates them instead of rebuilding their views. Only for activities whose views do
+    /// not rely on being created fresh each time they show.
+    var keepsHostsWarm = false
     var bottomKind: String
     var bottomLeading: Bool
     var key: Key
@@ -83,6 +87,11 @@ final class NotchActivityRegionStage {
         var bottomKind: String?
         var rowWidth: CGFloat?
         var spareFamily: Substring?
+        /// Identity to keep `current` under when its activity leaves; nil rebuilds it next time.
+        var warmIdentity: AnyHashable?
+        /// A parked piece of a covered activity, still holding its content.
+        var warm: (identity: AnyHashable, host: NotchHostedContentView)?
+        var warmExpiry: Task<Void, Never>?
 
         init(kind: NotchActivityRegionSlot) { self.kind = kind }
 
@@ -102,6 +111,8 @@ final class NotchActivityRegionStage {
     private var effect = NotchContentEffect.identity
 
     private static let switchInDelay: CFTimeInterval = 0.02
+    /// How long a covered activity's pieces keep their content before they are released.
+    private static let warmLifetime: TimeInterval = 30
 
     init(container: NSView, wrap: @escaping (AnyView) -> AnyView, onNeedsLayout: @escaping () -> Void) {
         self.container = container
@@ -147,8 +158,8 @@ final class NotchActivityRegionStage {
         isShowing = true
         if identityChanged { emptySpares() }
 
-        update(.leading, view: newRegions.leading, switching: identityChanged, keyChanged: topKeyChanged, animated: animated)
-        update(.trailing, view: newRegions.trailing, switching: identityChanged, keyChanged: topKeyChanged, animated: animated)
+        update(.leading, view: newRegions.leading, switching: identityChanged, leaving: identityChanged, keyChanged: topKeyChanged, animated: animated)
+        update(.trailing, view: newRegions.trailing, switching: identityChanged, leaving: identityChanged, keyChanged: topKeyChanged, animated: animated)
 
         let bottomSlot = slots[.bottom]!
         if let bottom = newRegions.bottom {
@@ -161,9 +172,10 @@ final class NotchActivityRegionStage {
             let widthChanged = width != bottomSlot.rowWidth
             bottomSlot.rowWidth = width
             let view = AnyView(bottom.environment(\.notchRegionRowWidth, width))
-            update(.bottom, view: view, switching: bottomSwitch, keyChanged: keyChanged || widthChanged, animated: animated, style: style, family: Self.family(newRegions.bottomKind))
+            update(.bottom, view: view, switching: bottomSwitch, leaving: identityChanged, keyChanged: keyChanged || widthChanged, animated: animated, style: style, family: Self.family(newRegions.bottomKind))
         } else if let current = bottomSlot.current {
             bottomSlot.current = nil
+            bottomSlot.warmIdentity = nil
             bottomSlot.bottomKind = nil
             bottomSlot.rowWidth = nil
             dismiss(current, in: bottomSlot, animated: animated, style: .fold)
@@ -184,6 +196,7 @@ final class NotchActivityRegionStage {
         _ kind: NotchActivityRegionSlot,
         view: AnyView,
         switching: Bool,
+        leaving: Bool,
         keyChanged: Bool,
         animated: Bool,
         style: NotchRegionTransitionStyle = .notch,
@@ -191,12 +204,19 @@ final class NotchActivityRegionStage {
     ) {
         let slot = slots[kind]!
         if switching || slot.current == nil {
+            // Claimed before the outgoing piece parks, which may take over the warm place.
+            let warmHost = takeWarm(for: slot)
             if let outgoing = slot.current {
-                dismiss(outgoing, in: slot, animated: animated, style: style, keeping: style == .crossfade ? family : nil)
+                dismiss(
+                    outgoing, in: slot, animated: animated, style: style,
+                    keeping: style == .crossfade ? family : nil,
+                    warm: leaving ? slot.warmIdentity : nil
+                )
             }
-            let host = takeSpare(for: slot, family: family)
+            let host = warmHost ?? takeSpare(for: slot, family: family)
             slot.current = host
             slot.identity = regions?.identity
+            slot.warmIdentity = regions?.keepsHostsWarm == true ? regions?.identity : nil
             host.setRootView(wrap(view), key: nil)
             host.apply(effect, animation: nil)
             host.setHitTestable(true)
@@ -205,6 +225,16 @@ final class NotchActivityRegionStage {
         } else if keyChanged, let host = slot.current {
             host.setRootView(wrap(view), key: nil)
         }
+    }
+
+    /// The piece this slot parked for the arriving activity, if it still holds that activity's content.
+    private func takeWarm(for slot: Slot) -> NotchHostedContentView? {
+        guard let regions, regions.keepsHostsWarm, let warm = slot.warm, warm.identity == regions.identity,
+              !slot.exiting.contains(where: { $0 === warm.host }) else { return nil }
+        slot.warm = nil
+        slot.warmExpiry?.cancel()
+        slot.warmExpiry = nil
+        return warm.host
     }
 
     private func takeSpare(for slot: Slot, family: Substring?) -> NotchHostedContentView {
@@ -225,10 +255,13 @@ final class NotchActivityRegionStage {
         return host
     }
 
-    private func dismiss(_ host: NotchHostedContentView, in slot: Slot, animated: Bool, style: NotchRegionTransitionStyle = .notch, keeping family: Substring? = nil) {
+    private func dismiss(
+        _ host: NotchHostedContentView, in slot: Slot, animated: Bool, style: NotchRegionTransitionStyle = .notch,
+        keeping family: Substring? = nil, warm warmIdentity: AnyHashable? = nil
+    ) {
         host.setHitTestable(false)
         guard animated else {
-            park(host, in: slot, keeping: family)
+            park(host, in: slot, keeping: family, warm: warmIdentity)
             return
         }
         slot.exiting.append(host)
@@ -237,22 +270,51 @@ final class NotchActivityRegionStage {
             guard let self, let host, slot.current !== host else { return }
             slot.exiting.removeAll { $0 === host }
             let stillWanted = self.isShowing && self.regions?.identity == identity
-            self.park(host, in: slot, keeping: stillWanted ? family : nil)
+            self.park(host, in: slot, keeping: stillWanted ? family : nil, warm: warmIdentity)
             self.onNeedsLayout()
         }
     }
 
-    private func park(_ host: NotchHostedContentView, in slot: Slot, keeping family: Substring? = nil) {
+    private func park(_ host: NotchHostedContentView, in slot: Slot, keeping family: Substring? = nil, warm warmIdentity: AnyHashable? = nil) {
         slot.exiting.removeAll { $0 === host }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         host.layer?.isHidden = true
-        host.park(keepingContent: family != nil)
+        host.park(keepingContent: family != nil || warmIdentity != nil)
         NotchRegionTransition.reset(host)
         CATransaction.commit()
+        if let warmIdentity {
+            keepWarm(host, as: warmIdentity, in: slot)
+            return
+        }
         if slot.spare == nil {
             slot.spare = host
             slot.spareFamily = family
+        } else if slot.spare !== host {
+            host.removeFromSuperview()
+        }
+    }
+
+    private func keepWarm(_ host: NotchHostedContentView, as identity: AnyHashable, in slot: Slot) {
+        if let previous = slot.warm?.host, previous !== host { releaseWarm(previous, in: slot) }
+        slot.warm = (identity, host)
+        slot.warmExpiry?.cancel()
+        slot.warmExpiry = Task { @MainActor [weak self, weak host] in
+            try? await Task.sleep(for: .seconds(Self.warmLifetime))
+            guard !Task.isCancelled, let self, let host, slot.warm?.host === host else { return }
+            slot.warm = nil
+            slot.warmExpiry = nil
+            self.releaseWarm(host, in: slot)
+        }
+    }
+
+    /// Drops a kept piece's content and turns it into the slot's plain spare, or removes it.
+    private func releaseWarm(_ host: NotchHostedContentView, in slot: Slot) {
+        guard slot.current !== host, !slot.exiting.contains(where: { $0 === host }) else { return }
+        host.park()
+        if slot.spare == nil {
+            slot.spare = host
+            slot.spareFamily = nil
         } else if slot.spare !== host {
             host.removeFromSuperview()
         }
@@ -274,7 +336,9 @@ final class NotchActivityRegionStage {
             slot.current = nil
             slot.identity = nil
             slot.bottomKind = nil
-            dismiss(current, in: slot, animated: animated, style: kind == .bottom ? .fold : .notch)
+            let warmIdentity = slot.warmIdentity
+            slot.warmIdentity = nil
+            dismiss(current, in: slot, animated: animated, style: kind == .bottom ? .fold : .notch, warm: warmIdentity)
         }
         regions = nil
         lastKey = nil
@@ -347,6 +411,14 @@ final class NotchActivityRegionStage {
         for (slot, host) in visibleHosts {
             let origin = frame(of: host, slot: slot, outline: outline, scale: scale).origin
             if settled { host.settle(at: origin) } else { host.presentOrigin(origin) }
+        }
+    }
+
+    /// Drops the keyframes of a timeline the morph engine abandoned for per-frame rendering.
+    func cancelTimeline() {
+        for (_, host) in visibleHosts {
+            host.layer?.removeAnimation(forKey: "morph.position")
+            if host.follower.isDriving { host.follower.reset() }
         }
     }
 
@@ -436,7 +508,11 @@ final class NotchActivityRegionStage {
 
     func tearDown() {
         for slot in slots.values {
-            for host in [slot.current, slot.spare].compactMap({ $0 }) + slot.exiting { host.removeFromSuperview() }
+            for host in [slot.current, slot.spare, slot.warm?.host].compactMap({ $0 }) + slot.exiting { host.removeFromSuperview() }
+            slot.warmExpiry?.cancel()
+            slot.warmExpiry = nil
+            slot.warm = nil
+            slot.warmIdentity = nil
             slot.current = nil
             slot.spare = nil
             slot.exiting.removeAll()

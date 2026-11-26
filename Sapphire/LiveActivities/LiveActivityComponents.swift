@@ -52,7 +52,7 @@ struct PersistentBatteryActivityView {
                     case .heatProtection: return "thermometer.sun.fill"
                     case .discharging: return "arrow.down.to.line.compact"
                     case .calibrating: return "battery.100.bolt"
-                    case .charging: return state.isPluggedIn ? "bolt.fill" : "powerplug.fill"
+                    case .charging: return state.isCharging ? "bolt.fill" : "powerplug.fill"
                     default: return "info.circle"
                     }
                 }()
@@ -375,19 +375,20 @@ struct FileProgressLiveActivityView {
         }
 
         return HStack(spacing: 8) {
+            // Capped so a long file name scrolls instead of stretching the notch to its full width.
             VStack(alignment: .leading, spacing: 1) {
-                Text(fileName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                MarqueeText(
+                    Text(fileName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                )
 
                 Text(statusText)
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.7))
                     .lineLimit(1)
             }
-            .frame(maxWidth: 200, alignment: .leading)
+            .frame(maxWidth: 170, alignment: .leading)
 
             Spacer()
 
@@ -719,7 +720,9 @@ struct CompactBatteryActivityView {
             case .calibrating, .calibrationStarted: return "battery.100.bolt"
             case .calibrationDone: return "checkmark.seal.fill"
             case .calibrationFailed: return "exclamationmark.triangle.fill"
-            case .charging: return state.isLow ? "battery.25" : "bolt.fill"
+            case .charging:
+                if state.isPluggedIn && !state.isCharging { return "powerplug.fill" }
+                return state.isLow ? "battery.25" : "bolt.fill"
             }
         }()
 
@@ -743,6 +746,8 @@ struct DefaultBatteryActivityView {
         let style: AnyShapeStyle
 
         switch managementState {
+        case .charging where state.isPluggedIn && !state.isCharging:
+            iconName = "powerplug.fill"; text = String(localized: "Plugged In"); style = AnyShapeStyle(Color.white.opacity(0.9))
         case .charging:
             iconName = "bolt.fill"; text = String(localized: "Charging"); style = AnyShapeStyle(Color.green)
         case .inhibited:
@@ -1772,16 +1777,22 @@ private struct AnimatedLockIcon: View {
 
     private var lockTint: Color {
         if lockScreenState.isUnlocked { return .white.opacity(0.8) }
+        if lockScreenState.faceIDAwaitingConfirmation { return .green }
         if lockScreenState.faceIDRequiresPassword { return .orange }
         return .white.opacity(0.8)
     }
 
+    private var looksOpen: Bool {
+        lockScreenState.isUnlocked || lockScreenState.faceIDAwaitingConfirmation
+    }
+
     var body: some View {
-        Image(systemName: lockScreenState.isUnlocked ? "lock.open.fill" : "lock.fill")
+        Image(systemName: looksOpen ? "lock.open.fill" : "lock.fill")
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(lockTint)
             .contentTransition(.symbolEffect(.replace.downUp.byLayer))
             .animation(.easeInOut(duration: 0.3), value: lockScreenState.faceIDRequiresPassword)
+            .animation(.easeInOut(duration: 0.3), value: lockScreenState.faceIDAwaitingConfirmation)
             .help(lockScreenState.faceIDRequiresPassword ? "Face ID locked — unlock with your password" : "")
     }
 }
@@ -1806,6 +1817,15 @@ private struct LockScreenStatusIndicatorView: View {
                             .transition(.opacity)
                     }
 
+                    else if state.faceIDAwaitingConfirmation {
+                        // Recognized; a key press unlocks.
+                        Image(systemName: "return")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.green)
+                            .transition(.opacity.combined(with: .scale))
+                            .help("Face recognized. Press Return or any key to unlock.")
+                    }
+
                     else if state.isAuthenticating, !state.faceIDRequiresPassword {
                         if state.isFaceIDEnabled {
                             Image(systemName: "faceid")
@@ -1826,6 +1846,7 @@ private struct LockScreenStatusIndicatorView: View {
         }
         .animation(.easeInOut(duration: 0.4), value: state.isUnlocked)
         .animation(.easeInOut(duration: 0.3), value: state.faceIDRequiresPassword)
+        .animation(.easeInOut(duration: 0.3), value: state.faceIDAwaitingConfirmation)
     }
 }
 
@@ -1839,18 +1860,297 @@ struct LockScreenLiveActivityView {
     }
 }
 
+private let capsLockBlue = NSColor(srgbRed: 0.36, green: 0.64, blue: 1.0, alpha: 1)
+
 private struct CapsLockAnimationView: View {
-    @State private var isUnlocked = false
+    /// Target state: caps on = locked, caps off = unlocked.
+    let isOn: Bool
+    @State private var isLocked: Bool
+
+    init(isOn: Bool) {
+        self.isOn = isOn
+        // Start from the opposite state so the transition reads as locking/unlocking.
+        _isLocked = State(initialValue: !isOn)
+    }
 
     var body: some View {
-        NotchSymbolView(
-            systemName: isUnlocked ? "lock.open.fill" : "lock.fill",
-            pointSize: 15,
-            weight: .semibold,
-            color: NSColor.white.withAlphaComponent(0.85),
-            replacesAnimated: true
+        CapsLockSymbolView(isLocked: isLocked)
+            .task(id: isOn) {
+                // onAppear fires before the notch finishes expanding, so the transition
+                // would run off-screen; wait until the island is visible.
+                try? await Task.sleep(for: .milliseconds(260))
+                isLocked = isOn
+            }
+    }
+}
+
+/// Hosts the layer-drawn padlock; nothing here lays out or draws per frame.
+private struct CapsLockSymbolView: NSViewRepresentable {
+    let isLocked: Bool
+
+    final class Container: NSView {
+        let glyph: LockGlyphLayer
+
+        init(isLocked: Bool) {
+            glyph = LockGlyphLayer(isLocked: isLocked)
+            super.init(frame: CGRect(origin: .zero, size: LockGlyphLayer.glyphSize))
+            wantsLayer = true
+            layer?.addSublayer(glyph)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override var intrinsicContentSize: NSSize { LockGlyphLayer.glyphSize }
+
+        override func layout() {
+            super.layout()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            glyph.position = CGPoint(x: LockGlyphLayer.glyphSize.width / 2, y: bounds.midY)
+            CATransaction.commit()
+        }
+    }
+
+    func makeNSView(context: Context) -> Container {
+        Container(isLocked: isLocked)
+    }
+
+    func updateNSView(_ view: Container, context: Context) {
+        view.glyph.setLocked(isLocked)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: Container, context: Context) -> CGSize? {
+        LockGlyphLayer.glyphSize
+    }
+}
+
+/// Padlock glyph drawn with plain layers so locking and unlocking animate on the render
+/// server. The SF Symbols Magic Replace it stands in for is rendered in-process (RenderBox
+/// and Metal at display rate for ~0.6 s), which was most of the CPU cost of a Caps Lock
+/// toggle. The closed shackle is cut out of `lock.fill` and swung about its fixed leg, the
+/// way a real shackle turns, then seats onto the `lock.open.fill` artwork.
+private final class LockGlyphLayer: CALayer {
+    private struct Art {
+        let size: CGSize
+        let closedBody: (image: CGImage, frame: CGRect)
+        let openBody: (image: CGImage, frame: CGRect)
+        let closedShackle: (image: CGImage, frame: CGRect)
+        let openShackle: (image: CGImage, frame: CGRect)
+        /// The tip of the open shackle's free leg, which hangs below the top of the body.
+        let openTail: (image: CGImage, frame: CGRect)?
+        let pivotLeg: (image: CGImage, frame: CGRect)?
+        let pivotX: CGFloat
+    }
+
+    static let glyphSize: CGSize = art?.size ?? CGSize(width: 20, height: 18)
+
+    private static let art: Art? = {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        guard let closed = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?.withSymbolConfiguration(configuration),
+              let open = NSImage(systemSymbolName: "lock.open.fill", accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+        else { return nil }
+        // Both glyphs share one box so the pill never resizes; the body stays at the
+        // leading edge and the open shackle swings into the spare width.
+        let size = CGSize(width: ceil(max(closed.size.width, open.size.width)), height: ceil(max(closed.size.height, open.size.height)))
+        let scale = max(2, NSScreen.screens.map(\.backingScaleFactor).max() ?? 2)
+        let width = Int(size.width * scale), height = Int(size.height * scale)
+
+        func raster(_ image: NSImage) -> (CGImage, [UInt8])? {
+            var data = [UInt8](repeating: 0, count: width * height * 4)
+            let made: CGImage? = data.withUnsafeMutableBytes { buffer in
+                guard let context = CGContext(
+                    data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ) else { return nil }
+                context.scaleBy(x: scale, y: scale)
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+                image.draw(in: CGRect(x: 0, y: (size.height - image.size.height) / 2, width: image.size.width, height: image.size.height))
+                NSGraphicsContext.restoreGraphicsState()
+                return context.makeImage()
+            }
+            guard let made else { return nil }
+            return (made, (0..<(width * height)).map { data[$0 * 4 + 3] })
+        }
+        guard let (closedImage, closedAlpha) = raster(closed), let (openImage, _) = raster(open) else { return nil }
+
+        // Opaque runs of one pixel row of the closed glyph (row 0 is the top).
+        func runs(_ row: Int) -> [Range<Int>] {
+            var found: [Range<Int>] = []
+            var start: Int?
+            for x in 0...width {
+                let solid = x < width && closedAlpha[row * width + x] > 96
+                if solid, start == nil { start = x }
+                if !solid, let begin = start { found.append(begin..<x); start = nil }
+            }
+            return found
+        }
+        let rowRuns = (0..<height).map(runs)
+        let widest = rowRuns.map { $0.map(\.count).max() ?? 0 }.max() ?? 0
+        // The body starts at the first row that is one run nearly as wide as the glyph.
+        guard widest > 0,
+              let bodyTop = rowRuns.firstIndex(where: { $0.count == 1 && $0[0].count * 10 >= widest * 8 }),
+              bodyTop > 0, bodyTop < height
+        else { return nil }
+        // Rows where the shackle is two separate legs; the right one is the hinge.
+        let legRows = (0..<bodyTop).filter { rowRuns[$0].count == 2 }
+        guard let legTop = legRows.first, let hinge = rowRuns[bodyTop - 1].last ?? rowRuns[legTop].last else { return nil }
+        let pivotColumn = (hinge.lowerBound + hinge.upperBound) / 2
+
+        func piece(_ image: CGImage, columns: Range<Int>, rows: Range<Int>) -> (image: CGImage, frame: CGRect)? {
+            let pixels = CGRect(x: columns.lowerBound, y: rows.lowerBound, width: columns.count, height: rows.count)
+            guard let cropped = image.cropping(to: pixels) else { return nil }
+            let frame = CGRect(
+                x: CGFloat(columns.lowerBound) / scale, y: CGFloat(height - rows.upperBound) / scale,
+                width: CGFloat(columns.count) / scale, height: CGFloat(rows.count) / scale
+            )
+            return (cropped, frame)
+        }
+        // The open body is a hair wider than the closed one; past that is the free leg's tip.
+        let bodyEnd = min(width, rowRuns[bodyTop][0].upperBound + Int(scale))
+        guard let closedBody = piece(closedImage, columns: 0..<width, rows: bodyTop..<height),
+              let openBody = piece(openImage, columns: 0..<bodyEnd, rows: bodyTop..<height),
+              let closedShackle = piece(closedImage, columns: 0..<width, rows: 0..<bodyTop),
+              let openShackle = piece(openImage, columns: 0..<width, rows: 0..<bodyTop)
+        else { return nil }
+        let margin = 1
+        let legColumns = max(0, hinge.lowerBound - margin)..<min(width, hinge.upperBound + margin)
+        return Art(
+            size: size, closedBody: closedBody, openBody: openBody, closedShackle: closedShackle, openShackle: openShackle,
+            openTail: bodyEnd < width ? piece(openImage, columns: bodyEnd..<width, rows: bodyTop..<height) : nil,
+            pivotLeg: piece(closedImage, columns: legColumns, rows: legTop..<bodyTop),
+            pivotX: CGFloat(pivotColumn) / scale
         )
-        .onAppear { isUnlocked = true }
+    }()
+
+    static let restingColor = NSColor.white.withAlphaComponent(0.85).cgColor
+    static let lockedColor = capsLockBlue.cgColor
+    static let swingDuration: CFTimeInterval = 0.42
+
+    private let glyph = CALayer()
+    private let closedBody = CALayer()
+    private let openBody = CALayer()
+    private let openGroup = CALayer()
+    private let swingGroup = CALayer()
+    private let swing = CALayer()
+    private(set) var isLocked = false
+
+    init(isLocked: Bool) {
+        super.init()
+        build()
+        apply(isLocked: isLocked)
+    }
+
+    override init(layer: Any) { super.init(layer: layer) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func build() {
+        let bounds = CGRect(origin: .zero, size: Self.glyphSize)
+        frame = bounds
+        glyph.frame = bounds
+        swingGroup.frame = bounds
+        openGroup.frame = bounds
+        guard let art = Self.art else { return }
+        func set(_ layer: CALayer, _ part: (image: CGImage, frame: CGRect)) {
+            layer.contents = part.image
+            layer.contentsGravity = .resize
+            layer.frame = part.frame
+        }
+        set(closedBody, art.closedBody)
+        set(openBody, art.openBody)
+        for part in [art.openShackle, art.openTail].compactMap({ $0 }) {
+            let layer = CALayer()
+            set(layer, part)
+            openGroup.addSublayer(layer)
+        }
+        // Anchor the swinging shackle on its hinge leg so scaling x turns it about that leg.
+        swing.contents = art.closedShackle.image
+        swing.contentsGravity = .resize
+        swing.bounds = CGRect(origin: .zero, size: art.closedShackle.frame.size)
+        swing.anchorPoint = CGPoint(x: (art.pivotX - art.closedShackle.frame.minX) / art.closedShackle.frame.width, y: 0.5)
+        swing.position = CGPoint(x: art.pivotX, y: art.closedShackle.frame.midY)
+        swingGroup.addSublayer(swing)
+        if let leg = art.pivotLeg {
+            // The hinge leg itself stays solid while the rest of the shackle turns edge-on.
+            let legLayer = CALayer()
+            set(legLayer, leg)
+            swingGroup.addSublayer(legLayer)
+        }
+        for layer in [closedBody, openBody, openGroup, swingGroup] { glyph.addSublayer(layer) }
+        mask = glyph
+    }
+
+    /// Sets the resting look for `isLocked` with no animation.
+    func apply(isLocked: Bool) {
+        self.isLocked = isLocked
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for layer in [self, closedBody, openBody, openGroup, swingGroup, swing] { layer.removeAllAnimations() }
+        setResting(isLocked: isLocked)
+        CATransaction.commit()
+    }
+
+    private func setResting(isLocked: Bool) {
+        backgroundColor = isLocked ? Self.lockedColor : Self.restingColor
+        closedBody.opacity = isLocked ? 1 : 0
+        openBody.opacity = isLocked ? 0 : 1
+        openGroup.opacity = isLocked ? 0 : 1
+        swingGroup.opacity = isLocked ? 1 : 0
+        swing.setValue(isLocked ? 1 : -1, forKeyPath: "transform.scale.x")
+    }
+
+    /// The swing's turn about the hinge at `progress` 0...1 of an unlock, as an x scale.
+    static func swingScale(at progress: Double) -> Double {
+        let eased = progress * progress * (3 - 2 * progress)
+        return cos(eased * .pi)
+    }
+
+    /// How much of the swung closed shackle (versus the open artwork) shows at `progress` of an unlock.
+    static func swingPresence(at progress: Double) -> Double {
+        let t = min(1, max(0, (progress - 0.68) / 0.32))
+        return 1 - t * t * (3 - 2 * t)
+    }
+
+    /// Animates to `isLocked`; the tint follows as the shackle seats (locking) or lifts (unlocking).
+    func setLocked(_ isLocked: Bool) {
+        guard isLocked != self.isLocked else { return }
+        self.isLocked = isLocked
+        let shownColor = presentation()?.backgroundColor ?? backgroundColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        setResting(isLocked: isLocked)
+
+        let steps = 28
+        // Unlocking runs progress 0 -> 1; locking plays the same motion backwards.
+        let progress = (0...steps).map { index -> Double in
+            let t = Double(index) / Double(steps)
+            return isLocked ? 1 - t : t
+        }
+        func keyframes(_ keyPath: String, _ values: [Double]) -> CAKeyframeAnimation {
+            let animation = CAKeyframeAnimation(keyPath: keyPath)
+            animation.values = values
+            animation.calculationMode = .linear
+            animation.duration = Self.swingDuration
+            return animation
+        }
+        let presence = progress.map(Self.swingPresence)
+        swing.add(keyframes("transform.scale.x", progress.map(Self.swingScale)), forKey: "lock.swing")
+        swingGroup.add(keyframes("opacity", presence), forKey: "lock.presence")
+        openGroup.add(keyframes("opacity", presence.map { 1 - $0 }), forKey: "lock.presence")
+        // The bodies are near identical; the one being left fades under the one arriving.
+        let leaving = isLocked ? openBody : closedBody
+        leaving.add(keyframes("opacity", (0...steps).map { 1 - Double($0) / Double(steps) }), forKey: "lock.body")
+
+        let tint = CABasicAnimation(keyPath: "backgroundColor")
+        tint.fromValue = shownColor
+        tint.toValue = backgroundColor
+        // Locking: blue arrives as the shackle seats. Unlocking: blue leaves as it lifts.
+        tint.beginTime = CACurrentMediaTime() + (isLocked ? 0.12 : 0)
+        tint.duration = isLocked ? 0.32 : 0.24
+        tint.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        tint.fillMode = .backwards
+        add(tint, forKey: "lock.tint")
+        CATransaction.commit()
     }
 }
 
@@ -1916,14 +2216,60 @@ struct NotchSymbolView: NSViewRepresentable {
 }
 
 struct CapsLockLiveActivityView {
+    static func left(isOn: Bool) -> some View {
+        CapsLockAnimationView(isOn: isOn)
+    }
+
+    static func right(isOn: Bool) -> some View {
+        Image(systemName: isOn ? "capslock.fill" : "capslock")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(isOn ? Color(nsColor: capsLockBlue) : .white.opacity(0.6))
+    }
+}
+
+/// Shown while a window is dragged and Snap Zones only open from the notch.
+struct SnapDragHintActivityView {
     static func left() -> some View {
-        CapsLockAnimationView()
+        SnapDragHintGlyph()
     }
 
     static func right() -> some View {
-        Image(systemName: "capslock.fill")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.75))
+        Text("Drag up to snap")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white.opacity(0.62))
+            .lineLimit(1)
+    }
+}
+
+/// A window outline easing up into a notch pill.
+private struct SnapDragHintGlyph: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Capsule()
+                .fill(.white.opacity(0.9))
+                .frame(width: 10, height: 3)
+            if reduceMotion {
+                window.offset(y: 6)
+            } else {
+                window.phaseAnimator([false, true]) { view, raised in
+                    view
+                        .offset(y: raised ? 5 : 10)
+                        .opacity(raised ? 1 : 0.55)
+                } animation: { raised in
+                    raised ? .easeOut(duration: 0.7) : .easeIn(duration: 0.5).delay(0.35)
+                }
+            }
+        }
+        .frame(width: 18, height: 20, alignment: .top)
+        .accessibilityHidden(true)
+    }
+
+    private var window: some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .strokeBorder(.white.opacity(0.85), lineWidth: 1.3)
+            .frame(width: 14, height: 9)
     }
 }
 

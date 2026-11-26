@@ -55,10 +55,13 @@ struct WeatherWidgetView: View {
                     .transition(.opacity)
 
                 Text(viewModel.conditionDescription)
-                    .font(.subheadline).opacity(0.8).lineLimit(1).minimumScaleFactor(0.7)
+                    .font(.subheadline).opacity(0.8).lineLimit(2).minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
                     .id(viewModel.conditionDescription)
                     .transition(.opacity)
             }
+            // Long messages (a missing-permission hint, a long place name) wrap instead of stretching the menu.
+            .frame(maxWidth: 190, alignment: .leading)
             .animation(.easeInOut(duration: 0.4), value: viewModel.locationName)
         }
     }

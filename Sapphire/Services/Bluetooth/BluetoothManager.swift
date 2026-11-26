@@ -90,6 +90,14 @@ class BluetoothManager: NSObject, ObservableObject {
 
         guard let address = device.addressString, let name = device.name else { return }
 
+        // Sapphire's own Continuity phone links come and go on their own (baseband paging,
+        // HID, RFCOMM), so announcing them chimes over and over. The Continuity UI owns
+        // their status instead.
+        if isPairedContinuityPeer(address: address, name: name) {
+            registerForDisconnect(device: device)
+            return
+        }
+
         if recentlyConnectedDebounceSet.contains(address) { return }
         recentlyConnectedDebounceSet.insert(address)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
@@ -230,6 +238,11 @@ class BluetoothManager: NSObject, ObservableObject {
 
         guard let address = device.addressString, let name = device.name else { return }
 
+        if isPairedContinuityPeer(address: address, name: name) {
+            disconnectionNotifications.removeValue(forKey: address)?.unregister()
+            return
+        }
+
         if SettingsModel.shared.current.bluetoothNotifySound {
             if let soundURL = Bundle.main.url(forResource: "jbl_cancel", withExtension: "caf") {
                 NSSound(contentsOf: soundURL, byReference: true)?.play()
@@ -255,6 +268,13 @@ class BluetoothManager: NSObject, ObservableObject {
         guard let pairedDevices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else { return }
         for device in pairedDevices where device.isConnected() {
             handleDeviceConnected(device: device, isInitialState: true)
+        }
+    }
+
+    private func isPairedContinuityPeer(address: String, name: String) -> Bool {
+        ContinuityKeystore.shared.pairedPeers.contains { peer in
+            ContinuityBluetoothAddress.matches(peer.classicAddress, address)
+                || peer.name.caseInsensitiveCompare(name) == .orderedSame
         }
     }
 

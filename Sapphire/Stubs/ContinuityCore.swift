@@ -80,6 +80,15 @@ struct ContinuityPairedPeer: Codable, Equatable, Identifiable {
     var id: String
     var name: String
     var deviceType: ContinuityDeviceType
+    var lastSeenAt: Date?
+    var blePeripheralID: String?
+    var classicAddress: String? = nil
+}
+
+final class ContinuityKeystore {
+    static let shared = ContinuityKeystore()
+    private(set) var pairedPeers: [ContinuityPairedPeer] = []
+    private init() {}
 }
 
 @MainActor

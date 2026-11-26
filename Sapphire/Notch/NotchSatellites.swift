@@ -42,6 +42,15 @@ final class NotchSatelliteStage {
         }
     }
 
+    /// Drops the keyframes of a timeline the morph engine abandoned for per-frame rendering.
+    func cancelTimeline() {
+        for host in hosts.values {
+            host.layer?.removeAnimation(forKey: "satellite.position")
+            host.followView.layer?.removeAnimation(forKey: "satellite.opacity")
+            host.followView.layer?.removeAnimation(forKey: "satellite.transform")
+        }
+    }
+
     func render(_ values: NotchMorphValues, outline: CGRect, final: Bool) {
         for (side, host) in hosts where host.isPresented {
             let presence = Self.presence(side, values)
@@ -127,5 +136,31 @@ final class NotchSatelliteStage {
         var transform = CATransform3DMakeTranslation(pivotX, pivotY, 0)
         transform = CATransform3DScale(transform, scale, scale, 1)
         return CATransform3DTranslate(transform, -pivotX, -pivotY, 0)
+    }
+}
+
+/// Keeps a satellite's content inside its bubble: a glyph renders at the usual 78%, and anything wider
+/// (a leading view that carries a label) scales down further until it fits, then is clipped to the circle.
+struct NotchSatelliteFit: ViewModifier {
+    let diameter: CGFloat
+    @State private var contentSize: CGSize = .zero
+
+    private static let glyphScale: CGFloat = 0.78
+
+    private var scale: CGFloat {
+        let room = diameter * Self.glyphScale
+        let extent = max(contentSize.width, contentSize.height)
+        guard extent > room else { return Self.glyphScale }
+        return Self.glyphScale * room / extent
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .fixedSize()
+            .onGeometryChange(for: CGSize.self, of: { $0.size }) { contentSize = $0 }
+            .scaleEffect(scale)
+            .frame(width: diameter, height: diameter)
+            .clipShape(Circle())
+            .contentShape(Circle())
     }
 }

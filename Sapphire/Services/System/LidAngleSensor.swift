@@ -193,6 +193,17 @@ final class LidAngleSensor: ObservableObject {
     private var recoveryAttempts = 0
     private var nextReopenAttemptTime: TimeInterval = 0
 
+    private enum StandbyPace {
+        case alert
+        case resting
+        case closed
+    }
+
+    private var standbyPace = StandbyPace.alert
+    private var standbyReferenceAngle: Double?
+    private var standbyReferenceTime: TimeInterval = 0
+    private var timerInterval: TimeInterval = 0
+
     private static let angleSmoothingFactor = 0.05
     private static let velocitySmoothingFactor = 0.3
     private static let movementThreshold = 0.5
@@ -201,8 +212,17 @@ final class LidAngleSensor: ObservableObject {
     private static let additionalDecay = 0.8
     private static let pollInterval: TimeInterval = 0.5
     private static let settingsPreviewPollInterval: TimeInterval = 0.15
-    private static let hingeAnimationStandbyPollInterval: TimeInterval = 0.1
-    private static let hingeAnimationPollInterval: TimeInterval = 1.0 / 30.0
+    private static let hingeAnimationStandbyPollInterval: TimeInterval = 0.05
+    /// Standby only watches for the lid to start moving. Each read is a synchronous HID round trip plus a
+    /// main run loop wake-up, the largest steady cost left while idle or playing media, so a lid that has
+    /// not moved for a while is read a quarter as often, and a shut lid (clamshell) at the default rate.
+    private static let hingeAnimationRestingPollInterval: TimeInterval = 0.2
+    private static let hingeAnimationClosedPollInterval: TimeInterval = 0.5
+    private static let standbyRestDelay: TimeInterval = 5
+    /// Readings are whole degrees and can flicker by one at rest.
+    private static let standbyMotionThreshold = 2.0
+    private static let standbyClosedAngle = 4.0
+    private static let hingeAnimationPollInterval: TimeInterval = 1.0 / 60.0
     private static let readFailureThreshold = 4
     private static let reprobeThreshold = 3
     private static let reopenRetryInterval: TimeInterval = 1
@@ -232,12 +252,49 @@ final class LidAngleSensor: ObservableObject {
         if activeClients.contains(.hingeAnimation) {
             return Self.hingeAnimationPollInterval
         }
-        if activeClients.contains(.hingeAnimationStandby) {
-            return Self.hingeAnimationStandbyPollInterval
-        }
         let isShowingSettings = activeClients.contains(.systemEnhanceSettingsPreview)
             || activeClients.contains(.caffeineSettingsPreview)
-        return isShowingSettings ? Self.settingsPreviewPollInterval : Self.pollInterval
+        let baseInterval = isShowingSettings ? Self.settingsPreviewPollInterval : Self.pollInterval
+        guard activeClients.contains(.hingeAnimationStandby) else { return baseInterval }
+        switch standbyPace {
+        case .alert: return Self.hingeAnimationStandbyPollInterval
+        case .resting: return min(Self.hingeAnimationRestingPollInterval, baseInterval)
+        case .closed: return min(Self.hingeAnimationClosedPollInterval, baseInterval)
+        }
+    }
+
+    /// Slows the standby poll while the lid sits still or shut, and restores it on the first movement.
+    private func updateStandbyPace(for rawAngle: Double) {
+        let now = CACurrentMediaTime()
+        if let reference = standbyReferenceAngle {
+            if abs(rawAngle - reference) >= Self.standbyMotionThreshold {
+                standbyReferenceAngle = rawAngle
+                standbyReferenceTime = now
+            }
+        } else {
+            standbyReferenceAngle = rawAngle
+            standbyReferenceTime = now
+        }
+
+        let pace: StandbyPace
+        if now - standbyReferenceTime < Self.standbyRestDelay {
+            pace = .alert
+        } else if rawAngle <= Self.standbyClosedAngle {
+            pace = .closed
+        } else {
+            pace = .resting
+        }
+        guard pace != standbyPace else { return }
+        standbyPace = pace
+        guard timer != nil, currentPollInterval != timerInterval else { return }
+        timer?.invalidate()
+        scheduleTimer()
+    }
+
+    private func resetStandbyPace() {
+        standbyPace = .alert
+        standbyReferenceAngle = nil
+        standbyReferenceTime = 0
     }
 
     func acquire(_ client: Client) {
@@ -277,7 +334,13 @@ final class LidAngleSensor: ObservableObject {
     }
 
     private func startTimer() {
+        scheduleTimer()
+        poll()
+    }
+
+    private func scheduleTimer() {
         let interval = currentPollInterval
+        timerInterval = interval
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.poll()
@@ -288,7 +351,6 @@ final class LidAngleSensor: ObservableObject {
             : min(0.2, interval * 0.2)
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
-        poll()
     }
 
     func stop() {
@@ -300,9 +362,11 @@ final class LidAngleSensor: ObservableObject {
             isDeviceOpen = false
         }
         isReporting = false
+        reportingMirror = false
         consecutiveReadFailures = 0
         recoveryAttempts = 0
         nextReopenAttemptTime = 0
+        resetStandbyPace()
     }
 
     private func poll() {
@@ -330,7 +394,11 @@ final class LidAngleSensor: ObservableObject {
         consecutiveReadFailures = 0
         recoveryAttempts = 0
         nextReopenAttemptTime = 0
-        if !isReporting {
+        // The poll runs many times a second for as long as the app is open. It reads
+        // plain copies of what it last published instead of going through the
+        // @Published wrappers on every tick.
+        if !reportingMirror {
+            reportingMirror = true
             isReporting = true
             statusMessage = diagnostic?.statusMessage ?? String(localized: "Sensor detected and ready.")
             isFirstUpdate = true
@@ -340,12 +408,21 @@ final class LidAngleSensor: ObservableObject {
         let rawAngle = Double(rawValue)
 
         updateVelocity(from: rawAngle)
+        updateStandbyPace(for: rawAngle)
+        // Only a running hinge animation needs every tick (it times how long the lid has been still); standby
+        // just watches for the lid to start moving.
         let needsEveryTick = activeClients.contains(.hingeAnimation)
-            || activeClients.contains(.hingeAnimationStandby)
-        guard needsEveryTick || rawAngle != angle || tick == 0 else { return }
+        guard needsEveryTick || rawAngle != angleMirror || !hasPublishedTick else { return }
+        angleMirror = rawAngle
+        hasPublishedTick = true
         angle = rawAngle
         tick &+= 1
     }
+
+    private var reportingMirror = false
+    private var angleMirror = Double.nan
+    private var hasPublishedTick = false
+    private var velocityMirror = 0.0
 
     private func handleReadFailure(on hidDevice: IOHIDDevice) {
         consecutiveReadFailures += 1
@@ -382,7 +459,9 @@ final class LidAngleSensor: ObservableObject {
 
     private func markReadingUnavailable() {
         isReporting = false
+        reportingMirror = false
         velocity = 0
+        velocityMirror = 0
         statusMessage = String(localized: "The lid angle sensor stopped responding. Reconnecting…")
     }
 
@@ -428,6 +507,9 @@ final class LidAngleSensor: ObservableObject {
 
         lastUpdateTime = now
         if smoothedVelocity < 0.01 { smoothedVelocity = 0 }
-        if velocity != smoothedVelocity { velocity = smoothedVelocity }
+        if velocityMirror != smoothedVelocity {
+            velocityMirror = smoothedVelocity
+            velocity = smoothedVelocity
+        }
     }
 }

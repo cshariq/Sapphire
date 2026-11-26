@@ -26,6 +26,8 @@ struct NotchSurfaceStyle: Equatable {
     var glows: [NotchLayerSurfaceView.Shadow]
     var animatesShadowOpacity: Bool
     var rim: NSColor? = nil
+    /// Solid band under the outline's lower edge, drawn on the layer surface in every surface mode.
+    var edge: NSColor? = nil
 
     struct Inputs {
         var appearance: NotchAppearanceSettings
@@ -33,6 +35,8 @@ struct NotchSurfaceStyle: Equatable {
         var shape: CustomNotchShape
         var notchState: NotchController.NotchState
         var isGeminiActive: Bool
+        /// A window is being dragged and Snap Zones open from the notch: light its lower edge.
+        var showsSnapEdge: Bool = false
         var isManuallyHidden: Bool
         var surfaceShadowOpacity: Double
         var radialEndRadius: CGFloat
@@ -82,6 +86,7 @@ struct NotchSurfaceStyle: Equatable {
             shape: input.shape, glass: nil, fill: nil, fillShadow: .none, glows: [],
             animatesShadowOpacity: !input.isGeminiActive
         )
+        style.edge = input.showsSnapEdge && !input.isManuallyHidden ? snapEdgeColor : nil
 
         if input.systemGlassAvailable, !profilingDisablesGlass, appearance.usesLiquidGlass,
            appearance.mode == .liquidGlass || !isOpaqueSolid {
@@ -168,6 +173,8 @@ struct NotchSurfaceStyle: Equatable {
         return style
     }
 
+    static let snapEdgeColor = NSColor.systemBlue
+
     static func layerFill(for appearance: NotchAppearanceSettings, radialEndRadius: CGFloat) -> NotchLayerFill {
         let alpha = CGFloat(max(0, min(1, appearance.opacity)))
         switch appearance.backgroundStyle {
@@ -224,7 +231,9 @@ final class NotchSurfaceHostView: NSView {
         self.engine = engine
         let previous = self.style
         self.style = style
-        guard previous != style || glassView == nil && style.glass != nil || fillView == nil && style.fill != nil else {
+        // The edge band lives on the layer surface, so a glass style without a fill gets a clear one to carry it.
+        let surfaceFill = style.fill ?? (style.edge != nil ? .solid(.clear) : nil)
+        guard previous != style || glassView == nil && style.glass != nil || fillView == nil && surfaceFill != nil else {
             return
         }
 
@@ -264,7 +273,7 @@ final class NotchSurfaceHostView: NSView {
             removeGlass()
         }
 
-        if let fill = style.fill {
+        if let fill = surfaceFill {
             let view: NotchLayerSurfaceView
             if let existing = fillView {
                 view = existing
@@ -281,6 +290,7 @@ final class NotchSurfaceHostView: NSView {
                 shadow: style.fillShadow,
                 glows: style.glows,
                 rim: style.rim,
+                edge: style.edge,
                 shadowAnimation: shadowAnimation
             )
         } else if let fillView {

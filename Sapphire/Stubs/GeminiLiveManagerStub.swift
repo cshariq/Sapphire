@@ -7,6 +7,7 @@
 #if !SAPPHIRE_FULL_BUILD
 import Combine
 import Foundation
+import Observation
 import ScreenCaptureKit
 import SwiftUI
 
@@ -23,14 +24,16 @@ struct GeminiActiveActivityView {
     }
 }
 
+// Mirrors the private GeminiLiveManager, which uses Observation (@Observable).
 @MainActor
-final class GeminiLiveManager: NSObject, ObservableObject {
-    @Published var isSessionRunning = false
-    @Published var isMicMuted = true
-    @Published var currentAudioLevel: Float = 0
-    @Published var inputTranscript = ""
-    @Published var outputTranscript = ""
-    @Published var lastError: String?
+@Observable
+final class GeminiLiveManager: NSObject {
+    var isSessionRunning = false
+    var isMicMuted = true
+    var currentAudioLevel: Float = 0
+    var inputTranscript = ""
+    var outputTranscript = ""
+    var lastError: String?
 
     let sessionDidEndPublisher = PassthroughSubject<Void, Never>()
 

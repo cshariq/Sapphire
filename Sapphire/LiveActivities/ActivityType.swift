@@ -43,6 +43,7 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
     case unlocked = 105
     case lockScreen = 110
     case capsLock = 115
+    case snapDragHint = 117
     case intelligenceAgent = 120
     case devActivity = 121
     case sports = 125

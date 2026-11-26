@@ -35,6 +35,8 @@ struct FloatingIslandStyle: Codable, Equatable {
     var openCornerRadius: CGFloat = 36
     var openPadding: CGFloat = 14
     var openTopPadding: CGFloat = 8
+    /// Wraps the home widgets onto rows instead of one long row.
+    var stackedWidgets: Bool = false
 
     static let legacyDefault: FloatingIslandStyle = {
         var style = FloatingIslandStyle()
@@ -97,6 +99,31 @@ struct FloatingIslandStyle: Codable, Equatable {
         openCornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .openCornerRadius) ?? defaults.openCornerRadius
         openPadding = try container.decodeIfPresent(CGFloat.self, forKey: .openPadding) ?? defaults.openPadding
         openTopPadding = try container.decodeIfPresent(CGFloat.self, forKey: .openTopPadding) ?? defaults.openTopPadding
+        stackedWidgets = try container.decodeIfPresent(Bool.self, forKey: .stackedWidgets) ?? defaults.stackedWidgets
+    }
+}
+
+enum MusicWidgetVisibility: String, Codable, CaseIterable, Identifiable {
+    case always
+    case whenSongLoaded
+    case whilePlaying
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .always: String(localized: "Always")
+        case .whenSongLoaded: String(localized: "Playing or Paused")
+        case .whilePlaying: String(localized: "Only While Playing")
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .always: String(localized: "Always visible. Keeps the last song after playback stops, or shows a button to open your music app.")
+        case .whenSongLoaded: String(localized: "Shows while a song is playing or paused. Hides once the player stops or quits.")
+        case .whilePlaying: String(localized: "Hides as soon as playback pauses.")
+        }
     }
 }
 
@@ -478,6 +505,13 @@ enum SnapWindowAnimation: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum FaceIDIlluminationLevel: String, Codable, CaseIterable, Identifiable {
+    case full
+    case adaptive
+
+    var id: String { rawValue }
+}
+
 enum FaceIDLocationPolicy: String, Codable, CaseIterable, Identifiable {
     case everywhere
     case selectedWiFiNetworks
@@ -603,7 +637,7 @@ struct NotchAppearanceSettings: Codable, Equatable {
     var opacity: Double = 1.0
     var enableTransparencyBlur: Bool = true
     var liquidGlassLook: Bool = false
-    var liquidGlassStyle: LiquidGlassMaterial = .frosted
+    var liquidGlassStyle: LiquidGlassMaterial = LiquidGlassOptions.notchDefault.material
     var liquidGlassTintHex: String = LiquidGlassOptions.notchDefault.tintHex
     var liquidGlassAppearance: LiquidGlassAppearance = LiquidGlassOptions.notchDefault.appearance
     var liquidGlassHovered: Bool = false
@@ -729,7 +763,7 @@ enum NotchDisplayTarget: String, Codable, CaseIterable, Identifiable {
 }
 
 enum HUDVisualStyle: String, Codable, CaseIterable, Identifiable {
-    case white, color, adaptive
+    case white, color, adaptive, gradient
     var id: String { self.rawValue.capitalized }
 
     var displayName: String {
@@ -737,15 +771,21 @@ enum HUDVisualStyle: String, Codable, CaseIterable, Identifiable {
         case .white: return String(localized: "White")
         case .color: return String(localized: "Color")
         case .adaptive: return String(localized: "Adaptive")
+        case .gradient: return String(localized: "Gradient")
         }
     }
 }
 
-enum HUDAdaptiveTransitionStyle: String, Codable, CaseIterable, Identifiable {
-    case smooth, thresholds
+enum HUDGradientTransition: String, Codable, CaseIterable, Identifiable {
+    case smooth, stepped
 
     var id: String { rawValue }
-    var displayName: String { rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .smooth: String(localized: "Smooth")
+        case .stepped: String(localized: "Stepped")
+        }
+    }
 }
 
 enum NotchBackgroundStyle: String, Codable, CaseIterable, Identifiable {
@@ -1189,10 +1229,12 @@ struct Settings: Codable, Equatable {
 
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
     var launchAtLogin: Bool = true
-    var appLanguage: String = "en"
     var hapticFeedbackEnabled: Bool = true
     var googleAnalyticsEnabled: Bool = true
     var hideFromScreenSharing: Bool = false
+    /// Seamless mode: present Sapphire to other apps as a background system process rather than a
+    /// separate app window. Debug-gated in the UI and off by default; see SeamlessModeManager.
+    var seamlessModeEnabled: Bool = false
     var notchDisplayTarget: NotchDisplayTarget = .allDisplays
     var floatingIslandOnNotchlessDisplays: Bool = true
     var floatingIslandTopOffset: CGFloat = 3
@@ -1471,6 +1513,8 @@ struct Settings: Codable, Equatable {
     var mouseButton5ModifiedAction: MouseButtonAction = .none
     var mouseModifierButtonEnabled: Bool = false
     var mouseModifierButtonNumber: Int = 3
+    /// Recorded hotkeys for buttons set to Run Hotkey, keyed by `MouseButtonHotkeySlot`.
+    var mouseButtonHotkeys: [String: KeyboardShortcut] = [:]
     var mouseModifierSelection: MouseModifierSelection = .default
 
     // MARK: - Vorssaint-style mouse & keyboard additions
@@ -1543,6 +1587,10 @@ struct Settings: Codable, Equatable {
     var remindersLiveActivityEnabled: Bool = true
     var timersLiveActivityEnabled: Bool = true
     var batteryLiveActivityEnabled: Bool = true
+    /// Battery activity when power is connected but the Mac isn't drawing a charge (full, adapter too weak, optimized charging).
+    var batteryPluggedInActivityEnabled: Bool = true
+    /// Battery activity when the battery actually starts charging, including after a "Plugged In" activity on the same connection.
+    var batteryChargingActivityEnabled: Bool = true
     var eyeBreakLiveActivityEnabled: Bool = false
     var desktopLiveActivityEnabled: Bool = true
     var focusLiveActivityEnabled: Bool = true
@@ -1803,10 +1851,7 @@ struct Settings: Codable, Equatable {
     var musicPlaylistsButtonEnabled: Bool = true
     var musicDevicesButtonEnabled: Bool = true
     var showPopularityInMusicPlayer: Bool = true
-    var hideMusicWidgetWhenNotPlaying: Bool = false
-    var hideMusicWidgetWhenSpotifyPausedAndIdle: Bool = false
-    var hideSpotifyWidgetWhenAppClosed: Bool = false
-    var persistMusicWidgetWhenPaused: Bool = true
+    var musicWidgetVisibility: MusicWidgetVisibility = .always
     var preferAirPlayOverSpotify: Bool = true
     var spotifyCanvasLiveVideo: Bool = true
     var showSpotifySourceTab: Bool = true
@@ -1822,14 +1867,16 @@ struct Settings: Codable, Equatable {
     var hudShowFunctionName: Bool = false
     var hudVisualStyle: HUDVisualStyle = .adaptive
     var hudCustomColor: CodableColor? = CodableColor(color: .accentColor)
+    var hudGlowEnabled: Bool = true
+    var hudGlowStrength: Double = 1.0
+    var hudGradientTransition: HUDGradientTransition = .smooth
+    var hudGradientColor1: CodableColor = Settings.defaultHUDGradientColors[0]
+    var hudGradientColor2: CodableColor = Settings.defaultHUDGradientColors[1]
+    var hudGradientColor3: CodableColor = Settings.defaultHUDGradientColors[2]
+    var hudGradientColor2Start: Int = 50
+    var hudGradientColor3Start: Int = 75
     var xdrHudGradientStart: CodableColor = CodableColor(color: .purple)
     var xdrHudGradientEnd: CodableColor = CodableColor(color: .blue)
-    var hudAdaptiveTransitionStyle: HUDAdaptiveTransitionStyle = .smooth
-    var hudAdaptiveColor1: CodableColor = CodableColor(color: .cyan)
-    var hudAdaptiveColor2: CodableColor = CodableColor(color: .purple)
-    var hudAdaptiveColor3: CodableColor = CodableColor(color: .pink)
-    var hudAdaptiveThreshold1: Double = 0.49
-    var hudAdaptiveThreshold2: Double = 0.74
     var enableVolumeHUD: Bool = true
     var volumeHUDStyle: HUDStyle = .default
     var volumeHUDShowDots: Bool = false
@@ -1855,9 +1902,25 @@ struct Settings: Codable, Equatable {
 
     var effectiveVolumeHUDStyle: HUDStyle { volumeHUDShowDots ? .dots : volumeHUDStyle }
     var effectiveBrightnessHUDStyle: HUDStyle { brightnessHUDShowDots ? .dots : brightnessHUDStyle }
+
+    static let defaultHUDGradientColors = [
+        CodableColor(color: Color(red: 0.39, green: 0.82, blue: 1.0)),
+        CodableColor(color: Color(red: 0.75, green: 0.35, blue: 0.95)),
+        CodableColor(color: Color(red: 1.0, green: 0.22, blue: 0.37))
+    ]
+
+    mutating func resetHUDGradient() {
+        let defaults = Settings()
+        hudGradientTransition = defaults.hudGradientTransition
+        hudGradientColor1 = defaults.hudGradientColor1
+        hudGradientColor2 = defaults.hudGradientColor2
+        hudGradientColor3 = defaults.hudGradientColor3
+        hudGradientColor2Start = defaults.hudGradientColor2Start
+        hudGradientColor3Start = defaults.hudGradientColor3Start
+    }
     var snapZoneViewMode: SnapZoneViewMode = .multi
     var snapDragEnabled: Bool = true
-    var snapOnWindowDragEnabled: Bool = true
+    var snapOnWindowDragEnabled: Bool = false
     var snapActivationDelay: Double = 0.45
     var snapWindowAnimation: SnapWindowAnimation = .fast
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
@@ -1867,9 +1930,26 @@ struct Settings: Codable, Equatable {
     var snapZoneShortcuts: [SnapZoneShortcut] = []
     var planes: [Plane] = []
 
+    // MARK: - Fractal Windows
+    var fractalWindowsEnabled: Bool = false
+    var fractalAutoDockNewWindows: Bool = false
+    var fractalKeyboardNavigation: Bool = true
+    var fractalPinchToZoom: Bool = true
+    var fractalDoubleClickToFrame: Bool = true
+    var fractalLivePictures: Bool = true
+    var fractalShowRadar: Bool = false
+    var fractalMenuBarNavigator: Bool = true
+    var fractalGuideShown: Bool = false
+    var fractalGap: Double = 10
+    var fractalExcludedApps: [String] = []
+
     // MARK: - Per-shortcut disabling (Keyboard Shortcuts page)
 
     var disabledShortcutIDs: Set<String> = []
+    /// Master switch for everything that changes how the battery charges (charge limit, sailing,
+    /// heat protection, discharge, calibration, MagSafe LED). Off leaves charging to macOS; battery
+    /// stats, widgets and notifications keep working.
+    var batteryManagementEnabled: Bool = false
     var batteryChargeLimit: Int = 100
     var lowBatteryNotificationPercentage: Int = 20
     var lowBatteryNotificationSoundEnabled: Bool = true
@@ -1914,6 +1994,10 @@ struct Settings: Codable, Equatable {
     var bluetoothUnlockNoSignalTimeout: Double = 60.0
     var bluetoothUnlockMinScanRSSI: Int = -80
     var bluetoothUnlockPassiveMode: Bool = false
+    var bluetoothUnlockFastResponse: Bool = false
+    var bluetoothUnlockUseContinuityPhone: Bool = true
+    var bluetoothUnlockContinuityPeerID: String? = nil
+    var bluetoothUnlockRequirePhoneUnlocked: Bool = false
     var faceIDUnlockEnabled: Bool = false
     var faceIDLocationPolicy: FaceIDLocationPolicy = .everywhere
     var faceIDAllowedWiFiNetworks: [String] = []
@@ -1923,8 +2007,13 @@ struct Settings: Codable, Equatable {
     var faceIDAntiSpoofAcceptThreshold: Double = 0.50
     var faceIDMismatchTimeout: Double = 30.0
     var faceIDKeepModelsInMemory: Bool = true
+    /// Face ID authenticates as usual but waits for a key press before typing the password.
+    var faceIDRequireKeyToUnlock: Bool = false
+    var faceIDIlluminateInDark: Bool = true
+    var faceIDIlluminationLevel: FaceIDIlluminationLevel = .full
+    var faceIDIlluminationRing: Bool = true
     var bluetoothUnlockWakeOnProximity: Bool = true
-    var bluetoothUnlockWakeWithoutUnlocking: Bool = false
+    var bluetoothUnlockWakeWithoutUnlocking: Bool = true
     var bluetoothUnlockPauseMusicOnLock: Bool = false
     var bluetoothUnlockUseScreensaver: Bool = false
     var bluetoothUnlockTurnOffScreenOnLock: Bool = true
@@ -2087,7 +2176,7 @@ struct Settings: Codable, Equatable {
     var menuBarOpacity: Double = 1.0
     var menuBarBlur: Bool = false
     var menuBarLiquidGlass: Bool = false
-    var menuBarLiquidGlassStyle: LiquidGlassMaterial = .frosted
+    var menuBarLiquidGlassStyle: LiquidGlassMaterial = LiquidGlassOptions.defaultMaterial
 
     var menuBarBorderWidth: CGFloat = 0.0
     var menuBarBorderColor: CodableColor = CodableColor(color: .black)
@@ -2335,7 +2424,9 @@ enum SettingsPersistence {
         migrateLegacyGlassIntensity(in: &dictionary, from: "menuBarLiquidGlassIntensity", to: "menuBarLiquidGlassStyle")
         migrateLockScreenGlassStyle(in: &dictionary)
         migrateFullScreenVisibility(in: &dictionary)
+        migrateMusicWidgetVisibility(in: &dictionary)
         migrateClipboardHistoryRetention(in: &dictionary)
+        migrateHUDGlow(in: &dictionary)
         for key in ["notchWidgetAppearance", "notchLiveActivityAppearance"] {
             guard var appearance = dictionary[key] as? [String: Any] else { continue }
             migrateLegacyGlassIntensity(in: &appearance, from: "liquidGlassIntensity", to: "liquidGlassStyle")
@@ -2403,6 +2494,12 @@ enum SettingsPersistence {
         dictionary["clipboardHistoryRetentionVersion"] = 1
     }
 
+    /// Glow used to come only with the Adaptive style; keep White and Color HUDs unlit until the user turns it on.
+    private static func migrateHUDGlow(in dictionary: inout [String: Any]) {
+        guard dictionary["hudGlowEnabled"] == nil, let style = dictionary["hudVisualStyle"] as? String else { return }
+        dictionary["hudGlowEnabled"] = style == HUDVisualStyle.adaptive.rawValue
+    }
+
     private static func migrateLegacyGlassIntensity(
         in dictionary: inout [String: Any],
         from legacyKey: String,
@@ -2420,6 +2517,23 @@ enum SettingsPersistence {
         let hidesSome = (dictionary["hideActivitiesInFullScreen"] as? [String: Bool])?.values.contains(true) ?? false
         let visibility: FullScreenActivityVisibility = legacyHideAll == true ? .hideAll : (hidesSome ? .hideSelected : .showAll)
         dictionary["fullScreenActivityVisibility"] = visibility.rawValue
+    }
+
+    private static func migrateMusicWidgetVisibility(in dictionary: inout [String: Any]) {
+        let hideWhenNotPlaying = dictionary.removeValue(forKey: "hideMusicWidgetWhenNotPlaying") as? Bool ?? false
+        let hidePausedSpotify = dictionary.removeValue(forKey: "hideMusicWidgetWhenSpotifyPausedAndIdle") as? Bool ?? false
+        let hideClosedSpotify = dictionary.removeValue(forKey: "hideSpotifyWidgetWhenAppClosed") as? Bool ?? false
+        let persistWhenPaused = dictionary.removeValue(forKey: "persistMusicWidgetWhenPaused") as? Bool ?? true
+        guard dictionary["musicWidgetVisibility"] == nil else { return }
+        let visibility: MusicWidgetVisibility
+        if hideWhenNotPlaying || hidePausedSpotify {
+            visibility = .whilePlaying
+        } else if hideClosedSpotify || !persistWhenPaused {
+            visibility = .whenSongLoaded
+        } else {
+            visibility = .always
+        }
+        dictionary["musicWidgetVisibility"] = visibility.rawValue
     }
 
     private static func migrateLockScreenGlassStyle(in dictionary: inout [String: Any]) {
@@ -2514,6 +2628,9 @@ struct EventHandlingSettingsSnapshot {
     let mouseButton5ModifiedAction: MouseButtonAction
     let mouseModifierButtonEnabled: Bool
     let mouseModifierButtonNumber: Int
+    let mouseButtonHotkeys: [String: KeyboardShortcut]
+    /// Key codes for `mouseButtonHotkeys`, resolved off the event tap (layout lookups are main-thread only).
+    let mouseButtonHotkeyKeyCodes: [String: UInt16]
     let mouseModifierSelection: MouseModifierSelection
     let mouseExtraClickFilterEnabled: Bool
     let mouseExtraClickFilterInterval: Double
@@ -2591,6 +2708,7 @@ struct EventHandlingSettingsSnapshot {
             && lhs.mouseButton5ModifiedAction == rhs.mouseButton5ModifiedAction
             && lhs.mouseModifierButtonEnabled == rhs.mouseModifierButtonEnabled
             && lhs.mouseModifierButtonNumber == rhs.mouseModifierButtonNumber
+            && lhs.mouseButtonHotkeys == rhs.mouseButtonHotkeys
             && lhs.mouseModifierSelection == rhs.mouseModifierSelection
             && lhs.mouseExtraClickFilterEnabled == rhs.mouseExtraClickFilterEnabled
             && lhs.mouseExtraClickFilterInterval == rhs.mouseExtraClickFilterInterval
@@ -2663,6 +2781,12 @@ struct EventHandlingSettingsSnapshot {
         mouseButton5ModifiedAction = settings.mouseButton5ModifiedAction
         mouseModifierButtonEnabled = settings.mouseModifierButtonEnabled
         mouseModifierButtonNumber = settings.mouseModifierButtonNumber
+        mouseButtonHotkeys = settings.mouseButtonHotkeys
+        let hotkeys = settings.mouseButtonHotkeys
+        // Settings are written on the main thread; layout lookups must happen there.
+        mouseButtonHotkeyKeyCodes = hotkeys.isEmpty || !Thread.isMainThread ? [:] : MainActor.assumeIsolated {
+            hotkeys.compactMapValues { KeyCodeTranslator.shared.keyCode(for: $0.key) }
+        }
         mouseModifierSelection = settings.mouseModifierSelection
         mouseExtraClickFilterEnabled = settings.mouseExtraClickFilterEnabled
         mouseExtraClickFilterInterval = settings.mouseExtraClickFilterInterval
@@ -2937,6 +3061,35 @@ final class SettingsModel: ObservableObject {
         adoptCurrentFloatingIslandStyle(&settings)
     }
 
+    /// Liquid Glass used to default to Frosted with a warm tint. Anything still on that exact pair was never
+    /// customised, so it moves to the current default (HUD, no tint).
+    static func adoptHUDLiquidGlassDefaults(_ settings: inout Settings) {
+        let legacyMaterial = LiquidGlassOptions.legacyDefaultMaterial
+        let legacyTint = LiquidGlassOptions.legacyDefaultTintHex
+        func adopt(_ appearance: inout NotchAppearanceSettings) {
+            guard appearance.liquidGlassStyle == legacyMaterial,
+                  appearance.liquidGlassTintHex.caseInsensitiveCompare(legacyTint) == .orderedSame else { return }
+            appearance.liquidGlassStyle = LiquidGlassOptions.notchDefault.material
+            appearance.liquidGlassTintHex = LiquidGlassOptions.notchDefault.tintHex
+        }
+        adopt(&settings.notchWidgetAppearance)
+        adopt(&settings.notchLiveActivityAppearance)
+        for key in settings.perDisplayNotchWidgetAppearance.keys {
+            adopt(&settings.perDisplayNotchWidgetAppearance[key]!)
+        }
+        for key in settings.perDisplayNotchLiveActivityAppearance.keys {
+            adopt(&settings.perDisplayNotchLiveActivityAppearance[key]!)
+        }
+        if settings.lockScreenGlass.material == legacyMaterial,
+           settings.lockScreenGlass.tintHex.caseInsensitiveCompare(legacyTint) == .orderedSame {
+            settings.lockScreenGlass.material = LiquidGlassOptions.lockScreenDefault.material
+            settings.lockScreenGlass.tintHex = LiquidGlassOptions.lockScreenDefault.tintHex
+        }
+        if !settings.menuBarLiquidGlass, settings.menuBarLiquidGlassStyle == legacyMaterial {
+            settings.menuBarLiquidGlassStyle = LiquidGlassOptions.defaultMaterial
+        }
+    }
+
     static func adoptCurrentFloatingIslandStyle(_ settings: inout Settings) {
         guard FloatingIslandStyle.previousDefaults.contains(settings.floatingIslandStyle) else { return }
         settings.floatingIslandStyle = Settings().floatingIslandStyle
@@ -3000,6 +3153,15 @@ final class SettingsModel: ObservableObject {
             defaults.set(true, forKey: "hingeAnimationDuoTuningV2")
         }
 
+        // The hinge renderer now frosts from the top edge with a cubic falloff and Intensity sets how far the panel
+        // dims, so values tuned against the old full-screen blur no longer mean the same thing.
+        if defaults.object(forKey: "hingeAnimationFrostV3") == nil {
+            let fresh = Settings()
+            loaded.systemEnhanceHingeAnimationIntensity = fresh.systemEnhanceHingeAnimationIntensity
+            loaded.systemEnhanceHingeAnimationBlur = fresh.systemEnhanceHingeAnimationBlur
+            defaults.set(true, forKey: "hingeAnimationFrostV3")
+        }
+
         if defaults.object(forKey: "fluidAnimationProfileV1") == nil {
             Self.adoptFluidAnimationProfile(&loaded)
             defaults.set(true, forKey: "fluidAnimationProfileV1")
@@ -3012,6 +3174,17 @@ final class SettingsModel: ObservableObject {
         if defaults.object(forKey: "notchlessFloatingIslandV5") == nil {
             Self.adoptCurrentFloatingIslandStyle(&loaded)
             defaults.set(true, forKey: "notchlessFloatingIslandV5")
+        }
+
+        if defaults.object(forKey: "liquidGlassHUDDefaultsV1") == nil {
+            Self.adoptHUDLiquidGlassDefaults(&loaded)
+            defaults.set(true, forKey: "liquidGlassHUDDefaultsV1")
+        }
+
+        // 3.6: Snap Zones no longer open on every window drag by default; dragging a window to the notch still opens them.
+        if defaults.object(forKey: "snapWindowDragOffByDefaultV1") == nil {
+            loaded.snapOnWindowDragEnabled = false
+            defaults.set(true, forKey: "snapWindowDragOffByDefaultV1")
         }
 
         loaded.normalizeCollectionOrders()
@@ -3922,7 +4095,7 @@ extension UTType {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case overview, general, systemEnhance, apps, storage, widgets, liveActivities, appActivities, fileProgress, appearance, lockScreen, bluetoothUnlock, shortcuts, keyboardShortcuts, snapZones, audio, battery, bluetooth, hud, notifications, nearbyShare, continuity, fileShelf, notes, clipboard, emoji, mouse, monitoring, devActivity, archives, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, dockLayouts, mediaOptimizer, about
+    case overview, general, systemEnhance, apps, storage, widgets, liveActivities, appActivities, fileProgress, appearance, lockScreen, bluetoothUnlock, shortcuts, keyboardShortcuts, snapZones, fractalWindows, audio, battery, bluetooth, hud, notifications, nearbyShare, continuity, fileShelf, notes, clipboard, emoji, mouse, monitoring, devActivity, archives, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, dockLayouts, mediaOptimizer, about
 
     var id: String { self.rawValue }
 
@@ -3936,6 +4109,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             return .financeWidget
         case .appLock:
             return .appLock
+        case .fractalWindows:
+            return .fractalWindows
         default:
             return nil
         }
@@ -3943,7 +4118,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var isBeta: Bool {
         switch self {
-        case .continuity, .appActivities, .fileProgress: true
+        case .continuity, .appActivities, .fileProgress, .fractalWindows: true
         default: false
         }
     }
@@ -3976,6 +4151,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: "Manage quick actions and shortcut surfaces shown in Sapphire."
         case .keyboardShortcuts: "Reference page listing every keyboard shortcut in Sapphire — global hotkeys, snap zones, and in-app shortcuts."
         case .snapZones: "Configure window snapping behavior, layouts, and zone actions."
+        case .fractalWindows: "Dock real windows into spaces nested as deep as you like, then pinch and zoom between them."
         case .audio: "Audio adjustments, EQ, and per-app volume adjustments."
         case .battery: "Battery widgets, history, charging preferences, and power-related controls."
         case .bluetooth: "Bluetooth device integrations, visibility, and connection behavior."
@@ -4025,6 +4201,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: String(localized: "Manage quick actions and shortcut surfaces shown in Sapphire.")
         case .keyboardShortcuts: String(localized: "Reference page listing every keyboard shortcut in Sapphire — global hotkeys, snap zones, and in-app shortcuts.")
         case .snapZones: String(localized: "Configure window snapping behavior, layouts, and zone actions.")
+        case .fractalWindows: String(localized: "Dock real windows into spaces nested as deep as you like, then pinch and zoom between them.")
         case .audio: String(localized: "Audio adjustments, EQ, and per-app volume adjustments.")
         case .battery: String(localized: "Battery widgets, history, charging preferences, and power-related controls.")
         case .bluetooth: String(localized: "Bluetooth device integrations, visibility, and connection behavior.")
@@ -4061,7 +4238,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var searchTokens: [String] {
         switch self {
         case .overview: ["overview", "assistant", "ask", "ai", "apple intelligence", "suggest", "quick", "notch size", "full screen", "inactive"]
-        case .general: ["startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry", "swipe", "hide", "lock"]
+        case .general: ["language", "localization", "translation", "startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry", "swipe", "hide", "lock"]
         case .systemEnhance: ["dock", "preview", "previews", "alt tab", "cmd tab", "window", "switcher", "calendar", "compact", "layout", "lock dock", "monitor", "paste", "plain text", "formatting", "running apps", "hide apps", "static only", "hinge", "lid", "angle", "fold", "folding", "animation", "iphone duo"]
         case .apps: ["apps", "applications", "uninstall", "cleaner", "appcleaner", "bundle", "extensions", "startup", "update", "updates", "check for updates", "upgrade", "version", "new version", "auto update", "release"]
         case .storage: ["storage", "disk", "space", "large files", "cache", "cleanup", "daisy disk", "scanner"]
@@ -4075,6 +4252,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: ["shortcut", "action", "launcher"]
         case .keyboardShortcuts: ["shortcut", "keyboard", "hotkey", "key", "keys", "reference", "cheat sheet", "list", "global", "command", "modifier"]
         case .snapZones: ["snap", "zones", "window", "tiling", "layout", "shortcut", "keyboard", "hotkey"]
+        case .fractalWindows: ["fractal", "window manager", "tiling", "dock", "nest", "zoom", "pinch", "tabs", "spaces", "trellis", "camera", "arrange"]
         case .audio: ["audio", "EQ", "volume", "app", "devices"]
         case .battery: ["battery", "charging", "power", "history"]
         case .bluetooth: ["bluetooth", "devices", "connections"]
@@ -4127,6 +4305,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: String(localized: "settings.search.keywords.shortcuts", defaultValue: "Shortcuts")
         case .keyboardShortcuts: String(localized: "settings.search.keywords.keyboardShortcuts", defaultValue: "Keyboard Shortcuts")
         case .snapZones: String(localized: "settings.search.keywords.snapZones", defaultValue: "Snap Zones")
+        case .fractalWindows: String(localized: "settings.search.keywords.fractalWindows", defaultValue: "Fractal Windows")
         case .audio: String(localized: "settings.search.keywords.audio", defaultValue: "Audio")
         case .battery: String(localized: "settings.search.keywords.battery", defaultValue: "Battery")
         case .bluetooth: String(localized: "settings.search.keywords.bluetooth", defaultValue: "Bluetooth")
@@ -4162,7 +4341,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var requiredPermissions: [PermissionType] {
         switch self {
-        case .systemEnhance, .hud, .music, .snapZones, .appearance, .dockLayouts, .mediaOptimizer: return [.accessibility]
+        case .systemEnhance, .hud, .music, .snapZones, .fractalWindows, .appearance, .dockLayouts, .mediaOptimizer: return [.accessibility]
         case .notifications: return [.notifications]
         case .weather: return [.location]
         case .calendar: return [.calendar, .reminders]
@@ -4173,7 +4352,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .clipboard: return [.accessibility]
         case .emoji: return [.accessibility]
         case .mouse: return [.accessibility]
-        case .intelligence: return [.accessibility, .fullDiskAccess, .screenRecording]
+        // Full Disk Access is only needed for the file tools on protected paths, so it's recommended, not required — Blip unlocks without it.
+        case .intelligence: return [.accessibility, .screenRecording]
         default: return []
         }
     }
@@ -4195,6 +4375,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: "Shortcuts"
         case .keyboardShortcuts: "Keyboard Shortcuts"
         case .snapZones: "Snap Zones"
+        case .fractalWindows: "Fractal Windows"
         case .audio: "Audio"
         case .battery: "Battery"
         case .bluetooth: "Bluetooth"
@@ -4229,19 +4410,19 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .overview: String(localized: "Overview"); case .general: String(localized: "General"); case .systemEnhance: String(localized: "System Enhance"); case .apps: String(localized: "Apps"); case .storage: String(localized: "Storage"); case .widgets: String(localized: "Widgets"); case .liveActivities: String(localized: "Live Activities"); case .appActivities: String(localized: "App Activities"); case .fileProgress: String(localized: "File Progress"); case .appearance: String(localized: "Appearance"); case .lockScreen: String(localized: "Lock Screen"); case .bluetoothUnlock: String(localized: "Authentication"); case .shortcuts: String(localized: "Shortcuts"); case .keyboardShortcuts: String(localized: "Keyboard Shortcuts"); case .snapZones: String(localized: "Snap Zones"); case .audio: String(localized: "Audio"); case .battery: String(localized: "Battery"); case .bluetooth: String(localized: "Bluetooth"); case .hud: String(localized: "HUD"); case .notifications: String(localized: "Notifications"); case .nearbyShare: String(localized: "Nearby Share"); case .continuity: String(localized: "Continuity"); case .fileShelf: String(localized: "File Shelf"); case .notes: String(localized: "Notes");        case .clipboard: String(localized: "Clipboard"); case .emoji: String(localized: "Emoji"); case .mouse: String(localized: "Mouse"); case .monitoring: String(localized: "Monitoring"); case .devActivity: String(localized: "Dev Activity"); case .archives: String(localized: "Archives & DMG"); case .mirror: String(localized: "Mirror"); case .caffeine: String(localized: "Caffeinate"); case .music: String(localized: "Music"); case .weather: String(localized: "Weather");        case .calendar: String(localized: "Calendar"); case .eyeBreak: String(localized: "Eye Break"); case .focusSession: String(localized: "Focus Sessions"); case .appLock: String(localized: "App Lock"); case .intelligence: String(localized: "Blip"); case .sports: String(localized: "Sports"); case .finance: String(localized: "Finance"); case .dockLayouts: String(localized: "Dock"); case .mediaOptimizer: String(localized: "Media Optimizer"); case .about: String(localized: "About")
+        case .overview: String(localized: "Overview"); case .general: String(localized: "General"); case .systemEnhance: String(localized: "System Enhance"); case .apps: String(localized: "Apps"); case .storage: String(localized: "Storage"); case .widgets: String(localized: "Widgets"); case .liveActivities: String(localized: "Live Activities"); case .appActivities: String(localized: "App Activities"); case .fileProgress: String(localized: "File Progress"); case .appearance: String(localized: "Appearance"); case .lockScreen: String(localized: "Lock Screen"); case .bluetoothUnlock: String(localized: "Authentication"); case .shortcuts: String(localized: "Shortcuts"); case .keyboardShortcuts: String(localized: "Keyboard Shortcuts"); case .snapZones: String(localized: "Snap Zones"); case .fractalWindows: String(localized: "Fractal Windows"); case .audio: String(localized: "Audio"); case .battery: String(localized: "Battery"); case .bluetooth: String(localized: "Bluetooth"); case .hud: String(localized: "HUD"); case .notifications: String(localized: "Notifications"); case .nearbyShare: String(localized: "Nearby Share"); case .continuity: String(localized: "Continuity"); case .fileShelf: String(localized: "File Shelf"); case .notes: String(localized: "Notes");        case .clipboard: String(localized: "Clipboard"); case .emoji: String(localized: "Emoji"); case .mouse: String(localized: "Mouse"); case .monitoring: String(localized: "Monitoring"); case .devActivity: String(localized: "Dev Activity"); case .archives: String(localized: "Archives & DMG"); case .mirror: String(localized: "Mirror"); case .caffeine: String(localized: "Caffeinate"); case .music: String(localized: "Music"); case .weather: String(localized: "Weather");        case .calendar: String(localized: "Calendar"); case .eyeBreak: String(localized: "Eye Break"); case .focusSession: String(localized: "Focus Sessions"); case .appLock: String(localized: "App Lock"); case .intelligence: String(localized: "Blip"); case .sports: String(localized: "Sports"); case .finance: String(localized: "Finance"); case .dockLayouts: String(localized: "Dock"); case .mediaOptimizer: String(localized: "Media Optimizer"); case .about: String(localized: "About")
         }
     }
 
     var systemImage: String {
         switch self {
-        case .overview: "sparkles"; case .general: "gear"; case .systemEnhance: "macwindow.on.rectangle"; case .apps: "square.stack.3d.up.fill"; case .storage: "internaldrive.fill"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appActivities: "video.bubble.fill"; case .fileProgress: "arrow.down.circle.fill"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .keyboardShortcuts: "keyboard"; case .snapZones: "uiwindow.split.2x1"; case .audio: "waveform"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .nearbyShare: "shareplay"; case .continuity: "iphone.gen3.radiowaves.left.and.right"; case .fileShelf: "tray.full.fill"; case .notes: "note.text";        case .clipboard: "list.clipboard"; case .emoji: "face.smiling"; case .mouse: "computermouse.fill"; case .monitoring: "gauge.with.dots.needle.50percent"; case .devActivity: "hammer.circle.fill"; case .archives: "archivebox.fill"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .dockLayouts: "dock.rectangle"; case .mediaOptimizer: "photo"; case .about: "info.circle"
+        case .overview: "sparkles"; case .general: "gear"; case .systemEnhance: "macwindow.on.rectangle"; case .apps: "square.stack.3d.up.fill"; case .storage: "internaldrive.fill"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appActivities: "video.bubble.fill"; case .fileProgress: "arrow.down.circle.fill"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .keyboardShortcuts: "keyboard"; case .snapZones: "uiwindow.split.2x1"; case .fractalWindows: "square.split.diagonal.2x2.fill"; case .audio: "waveform"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .nearbyShare: "shareplay"; case .continuity: "iphone.gen3.radiowaves.left.and.right"; case .fileShelf: "tray.full.fill"; case .notes: "note.text";        case .clipboard: "list.clipboard"; case .emoji: "face.smiling"; case .mouse: "computermouse.fill"; case .monitoring: "gauge.with.dots.needle.50percent"; case .devActivity: "hammer.circle.fill"; case .archives: "archivebox.fill"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .dockLayouts: "dock.rectangle"; case .mediaOptimizer: "photo"; case .about: "info.circle"
         }
     }
 
     var iconBackgroundColor: Color {
         switch self {
-        case .overview: .purple; case .general: .black; case .systemEnhance: .blue; case .apps: .purple; case .storage: .orange; case .widgets: .gray; case .liveActivities: .cyan; case .appActivities: .green; case .fileProgress: .blue; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .keyboardShortcuts: .purple; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .nearbyShare: .blue; case .continuity: .green; case .fileShelf: .orange; case .notes: .yellow;        case .clipboard: .mint; case .emoji: .indigo; case .mouse: .teal; case .monitoring: .green; case .devActivity: .purple; case .archives: .brown; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .dockLayouts: .cyan; case .mediaOptimizer: .orange; case .about: .blue
+        case .overview: .purple; case .general: .black; case .systemEnhance: .blue; case .apps: .purple; case .storage: .orange; case .widgets: .gray; case .liveActivities: .cyan; case .appActivities: .green; case .fileProgress: .blue; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .keyboardShortcuts: .purple; case .snapZones: .blue; case .fractalWindows: .orange; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .nearbyShare: .blue; case .continuity: .green; case .fileShelf: .orange; case .notes: .yellow;        case .clipboard: .mint; case .emoji: .indigo; case .mouse: .teal; case .monitoring: .green; case .devActivity: .purple; case .archives: .brown; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .dockLayouts: .cyan; case .mediaOptimizer: .orange; case .about: .blue
         }
     }
 
@@ -4262,6 +4443,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: return [Color(hue: 0.75, saturation: 0.36, brightness: 0.86), Color(hue: 0.75, saturation: 0.50, brightness: 0.60)]
         case .keyboardShortcuts: return [Color(hue: 0.78, saturation: 0.40, brightness: 0.86), Color(hue: 0.78, saturation: 0.54, brightness: 0.60)]
         case .snapZones: return [Color(hue: 0.60, saturation: 0.46, brightness: 0.88), Color(hue: 0.60, saturation: 0.60, brightness: 0.63)]
+        case .fractalWindows: return [Color(hue: 0.08, saturation: 0.62, brightness: 0.98), Color(hue: 0.95, saturation: 0.58, brightness: 0.80)]
         case .audio: return [Color(hue: 0.57, saturation: 0.40, brightness: 0.87), Color(hue: 0.57, saturation: 0.54, brightness: 0.61)]
         case .battery: return [Color(hue: 0.36, saturation: 0.44, brightness: 0.84), Color(hue: 0.36, saturation: 0.58, brightness: 0.58)]
         case .bluetooth: return [.blue, .cyan]

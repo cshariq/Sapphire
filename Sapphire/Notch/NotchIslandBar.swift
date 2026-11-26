@@ -275,9 +275,9 @@ private struct NotchIslandBarTypeButton: View {
                 activeTint: caffeineManager.isActive ? Color.orange : nil,
                 help: caffeineManager.isActive ? "Keep Awake: On" : "Keep Awake"
             ) {
-                caffeineManager.toggle()
+                NotchCaffeinateHoldMenu.shared.toggleUnlessHeld(caffeineManager)
             }
-            .contextMenu { NotchCaffeinateMenu(caffeineManager: caffeineManager) }
+            .caffeinateMenu(caffeineManager)
         case .pin:
             NotchIslandBarButton(
                 systemName: context.isPinned.wrappedValue ? "pin.fill" : "pin",

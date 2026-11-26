@@ -35,12 +35,13 @@ private struct BatterySleepMonitoringSettings: Equatable {
     init(_ settings: Settings) {
         isEnabled = settings.logBatteryDuringSleep
         intervalMinutes = settings.sleepLoggingIntervalMinutes
-        chargeLimit = settings.batteryChargeLimit
-        stopChargingWhileAsleep = settings.stopChargingWhenSleeping
+        chargeLimit = settings.batteryManagementEnabled ? settings.batteryChargeLimit : 100
+        stopChargingWhileAsleep = settings.batteryManagementEnabled && settings.stopChargingWhenSleeping
     }
 }
 
 private struct BatteryPowerPolicySettings: Equatable {
+    let managementEnabled: Bool
     let chargeLimit: Int
     let useHardwarePercentage: Bool
     let oneTimeDischargeEnabled: Bool
@@ -60,6 +61,7 @@ private struct BatteryPowerPolicySettings: Equatable {
     let manualChargePaused: Bool
 
     init(_ settings: Settings) {
+        managementEnabled = settings.batteryManagementEnabled
         chargeLimit = settings.batteryChargeLimit
         useHardwarePercentage = settings.useHardwareBatteryPercentage
         oneTimeDischargeEnabled = settings.oneTimeDischargeEnabled
@@ -94,6 +96,8 @@ class PowerStateController: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var heatProtectionHysteresisTimer: Timer?
     private var isInHeatProtection = false
+    /// Whether this run has asserted control over charging, so turning management off hands it back once.
+    private var isManaging = false
 
     private lazy var isAppleSilicon: Bool = {
         var sysinfo = utsname()
@@ -143,10 +147,11 @@ class PowerStateController: ObservableObject {
     private func reconcileSleepMonitoring() {
         let current = settings.settings
         if current.logBatteryDuringSleep {
+            // With management off the helper only logs: no limit to re-assert, no charging cut.
             batteryManager.startSleepBatteryLogging(
                 intervalMinutes: max(15, current.sleepLoggingIntervalMinutes),
-                chargeLimit: current.batteryChargeLimit,
-                stopChargingWhileAsleep: current.stopChargingWhenSleeping
+                chargeLimit: current.batteryManagementEnabled ? current.batteryChargeLimit : 100,
+                stopChargingWhileAsleep: current.batteryManagementEnabled && current.stopChargingWhenSleeping
             )
         } else {
             batteryManager.stopSleepBatteryLogging()
@@ -157,6 +162,7 @@ class PowerStateController: ObservableObject {
         // Calibration owns charging; inhibiting here would stop "charge to 100%" and evaluateState won't undo it.
         guard !calibrationManager.isActive else { return }
         let currentSettings = settings.settings
+        guard currentSettings.batteryManagementEnabled else { return }
         guard let batteryState = batteryMonitor.currentState else {
             if currentSettings.stopChargingWhenSleeping {
                 batteryManager.enableCharging(false)
@@ -204,6 +210,12 @@ class PowerStateController: ObservableObject {
 
     private func evaluateState() {
         Task {
+            guard settings.settings.batteryManagementEnabled else {
+                await releaseBatteryManagement()
+                return
+            }
+            isManaging = true
+
             if calibrationManager.isActive {
                 switch calibrationManager.state {
                 case .chargingToFull, .holdingAtFull, .dischargingToLow, .finalChargeToLimit:
@@ -355,6 +367,45 @@ class PowerStateController: ObservableObject {
                 ledColor: ledColor
             )
         }
+    }
+
+    /// Hands charging back to macOS: stops any discharge, lifts Sapphire's limit or adapter cut, returns the
+    /// native Charge Limit and the MagSafe LED to the system, and ends calibration. Runs when management is
+    /// off; at launch it only acts if an earlier run left a hold in place.
+    private func releaseBatteryManagement() async {
+        let leftoverHold = batteryManager.hasRecordedChargeHold
+        guard isManaging || leftoverHold || NativeChargeLimit.sapphireOwnsLimit || calibrationManager.isActive else {
+            return
+        }
+        let wasManaging = isManaging || leftoverHold
+        isManaging = false
+
+        if calibrationManager.isActive { calibrationManager.cancel() }
+        heatProtectionHysteresisTimer?.invalidate()
+        heatProtectionHysteresisTimer = nil
+        isInHeatProtection = false
+
+        batteryManager.setDischarge(discharging: false)
+        if NativeChargeLimit.sapphireOwnsLimit {
+            await NativeChargeLimit.release()
+        }
+        switch await batteryManager.currentChargeControlMode() {
+        case .firmware:
+            batteryManager.setChargeLimit(100)
+        case .adapter:
+            batteryManager.enableCharging(true)
+        case .legacy, .unsupported:
+            if isAppleSilicon {
+                batteryManager.enableCharging(true)
+            } else {
+                batteryManager.setChargeLimit(100)
+            }
+        }
+        if wasManaging, settings.settings.controlMagSafeLEDEnabled {
+            batteryManager.setMagSafeLED(color: BatteryManager.systemMagSafeLED)
+        }
+        caffeineManager.stopIfAutoStartedByBatteryDischarge()
+        statusManager.updateState(managementState: .charging)
     }
 
     private func applyLowPowerModePolicy(batteryState: BatteryState, settings: Settings) {
@@ -638,6 +689,15 @@ class BatteryManager {
 
     // Persisted so a 100% limit can tell its own leftover hold from macOS's Charge Limit; never written counts as held.
     private static let chargeHoldKey = "sapphire.chargeHoldApplied"
+
+    /// ACLC value that returns the MagSafe LED to macOS's own control.
+    static let systemMagSafeLED = 0
+
+    /// True only when an earlier hold was recorded and not yet released (unlike `chargeHoldApplied`,
+    /// which assumes a hold when nothing was recorded).
+    var hasRecordedChargeHold: Bool {
+        UserDefaults.standard.object(forKey: Self.chargeHoldKey) as? Bool == true
+    }
 
     /// Whether a charge limit or pause Sapphire sent may still be holding the battery.
     var chargeHoldApplied: Bool {

@@ -31,7 +31,7 @@ public enum AppFeature: String, Codable, CaseIterable {
          basicStorageFeatures, clipboardPicker, clipboardAdvancedTools, dmgInstaller,
          macScreenMirroringOnAndroid, macScreenExtensionOnMac, androidInstantHotspot,
          androidRemoteConnection, advancedStorageFeatures, batteryWidget, audio8D,
-         storageWidgets, ocrFeature
+         storageWidgets, ocrFeature, fractalWindows
 }
 
 public struct SubscriptionEntitlements: Codable, Equatable {

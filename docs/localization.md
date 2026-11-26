@@ -1,6 +1,15 @@
 # Localization
 
-Sapphire uses Apple's String Catalogs. The source language is English; Simplified Chinese is `zh-Hans` and Traditional Chinese (Taiwan) is `zh-Hant`. macOS selects the application language using the system language order or the per-app language preference. Quit and reopen Sapphire after changing that preference. No application-specific language setting is required.
+Sapphire uses Apple's String Catalogs. The source language is English. Translations: Simplified Chinese (`zh-Hans`), Traditional Chinese, Taiwan (`zh-Hant`), German (`de`), Spanish (`es`), French (`fr`), Italian (`it`), Japanese (`ja`), Korean (`ko`), Brazilian Portuguese (`pt-BR`) and Russian (`ru`).
+
+macOS picks the interface language from the system language order unless the app has its own language. Settings ▸ General ▸ Language sets that per-app language (`AppLanguage` in `App Settings/AppLanguageSettings.swift`). It writes the app's `AppleLanguages` default, the same value System Settings ▸ General ▸ Language & Region ▸ Applications writes, and offers to relaunch, because Foundation reads it only at launch. Sapphire keeps no copy of the choice in `Settings`. The menu lists every localization in the bundle, so a newly added language appears without code changes.
+
+## Adding a language
+
+1. Add the language code to `knownRegions` in `project.pbxproj`.
+2. Translate every entry in all three catalogs (the validator requires a value for every entry once a language appears). Entries marked `shouldTranslate: false`, and pure symbols or format strings, keep their English value.
+3. Add the code to `COMPILED_LANGUAGES` in `script/check_localization.py`, `LANGUAGES` in `script/test_localization.py` and `shippedLanguages` in `script/localization/LocalizationProbe.swift`.
+4. Plurals use the language's CLDR categories (Japanese and Korean `other`; Russian `one`, `few`, `many`, `other`). The validator checks a category English doesn't have against English `other`.
 
 ## Resource ownership
 
@@ -67,7 +76,7 @@ python3 script/test_localization.py --output /absolute/resource-check.json
 python3 script/test_localization.py --app /absolute/Sapphire.app --output /absolute/bundle-check.json
 ```
 
-The catalog validator rejects missing translations and changed format arguments. Simplified Chinese is required in every catalog; once a catalog contains Traditional Chinese, every entry must have it too. Its optional `--app-stringsdata` and `--widget-stringsdata` arguments compare against fresh compiler extraction; repeat the app argument for linked libraries that use the main bundle. `test_localization.py` compiles source catalogs by default, or reads the supplied app with `--app`. Both modes run fresh Foundation processes for English, Simplified Chinese, Traditional Chinese, an unsupported language, ordered fallback and independent region settings. Formatting fixtures are separate from product strings and cannot establish UI coverage.
+The catalog validator rejects missing translations and changed format arguments. Simplified Chinese is required in every catalog; once a catalog contains any other language, every entry must have it too. Its optional `--app-stringsdata` and `--widget-stringsdata` arguments compare against fresh compiler extraction; repeat the app argument for linked libraries that use the main bundle. `test_localization.py` compiles source catalogs by default, or reads the supplied app with `--app`. Both modes run fresh Foundation processes for English, Simplified Chinese, Traditional Chinese, an unsupported language (Swedish), ordered fallback and independent region settings. Formatting fixtures are separate from product strings and cannot establish UI coverage.
 
 The Localization resources workflow runs catalog validation, native resource checks and the application test entry point on pull requests. It does not accept UI layout, system permissions or hardware-dependent features.
 

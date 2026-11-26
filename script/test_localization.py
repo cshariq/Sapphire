@@ -28,14 +28,14 @@ CAMERA_EN = "Sapphire uses the camera for the Mirror widget so you can see yours
 SCENARIOS = [
     ("english", "(en)", "en_US", "en"),
     ("simplified-Chinese", "(zh-Hans)", "zh_CN", "zh-Hans"),
-    ("unsupported-language", "(fr)", "fr_FR", "en"),
-    ("ordered-language-fallback", "(fr,zh-Hans,en)", "en_US", "zh-Hans"),
+    ("unsupported-language", "(sv)", "sv_SE", "en"),
+    ("ordered-language-fallback", "(sv,zh-Hans,en)", "en_US", "zh-Hans"),
     ("Chinese-with-US-region", "(zh-Hans)", "en_US", "zh-Hans"),
     ("traditional-Chinese", "(zh-Hant)", "zh_TW", "zh-Hant"),
     ("Taiwan-language-tag", "(zh-Hant-TW)", "zh_TW", "zh-Hant"),
-    ("ordered-traditional-fallback", "(fr,zh-Hant,en)", "en_US", "zh-Hant"),
+    ("ordered-traditional-fallback", "(sv,zh-Hant,en)", "en_US", "zh-Hant"),
 ]
-LANGUAGES = ["en", "zh-Hans", "zh-Hant"]
+LANGUAGES = ["en", "zh-Hans", "zh-Hant", "de", "es", "fr", "it", "ja", "ko", "pt-BR", "ru"]
 
 
 def digest(path):

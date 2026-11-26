@@ -79,6 +79,41 @@ enum AudioEQ {
     }
 }
 
+/// How the EQ makes room for its boosts so they can't clip.
+enum EQHeadroomMode: String, CaseIterable, Identifiable {
+    /// A fixed pre-cut equal to the curve's biggest boost. Never moves, so the level never rides.
+    case fixed
+    /// The same fixed pre-cut, shared by every app on the device, with the device's own output volume
+    /// raised by that amount so the track plays as loud as it did without the EQ.
+    case raiseOutputVolume
+    /// No pre-cut; boosts shrink (and only then the level drops) when a peak would pass full scale.
+    case adaptive
+
+    static let defaultsKey = "SapphireEQHeadroomMode"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .fixed: String(localized: "Steady Level")
+        case .raiseOutputVolume: String(localized: "Raise Output Volume")
+        case .adaptive: String(localized: "Adaptive")
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .fixed: String(localized: "Turns the EQ'd audio down by its biggest boost. Quieter, but the level never moves.")
+        case .raiseOutputVolume: String(localized: "Turns the audio down by the biggest boost and raises the device volume by the same amount, so it stays as loud. The system volume will read higher.")
+        case .adaptive: String(localized: "Plays boosts at full strength and only eases them back on loud peaks. Loudest, but the level can move.")
+        }
+    }
+
+    static var current: EQHeadroomMode {
+        UserDefaults.standard.string(forKey: defaultsKey).flatMap(EQHeadroomMode.init(rawValue:)) ?? .fixed
+    }
+}
+
 enum AudioEQBandLayout: Int, CaseIterable, Identifiable {
     case ten = 10
     case fifteen = 15

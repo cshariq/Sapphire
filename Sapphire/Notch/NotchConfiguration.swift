@@ -236,6 +236,7 @@ struct ResolvedNotchConfiguration: Equatable {
     let isFloatingIsland: Bool
     let isNotchless: Bool
     let floatingIslandCornerRadius: CGFloat
+    let islandStacksWidgets: Bool
     let widgetMenuTopInset: CGFloat
     let topInset: CGFloat
     let displayScale: CGFloat
@@ -348,6 +349,7 @@ struct ResolvedNotchConfiguration: Equatable {
         self.activityContentHorizontalPadding = 15
         let islandStyle = settings.resolvedFloatingIslandStyle(forDisplayID: displayID)
         self.floatingIslandCornerRadius = islandStyle.openCornerRadius
+        self.islandStacksWidgets = isFloatingIsland && islandStyle.stackedWidgets
         self.widgetMenuTopInset = isFloatingIsland ? islandStyle.openTopPadding : 0
         self.activityDefaultHorizontalPadding = isFloatingIsland ? islandStyle.sidePadding : 13
         self.activityWithContentHorizontalPadding = isFloatingIsland ? islandStyle.sidePadding + 2 : 15

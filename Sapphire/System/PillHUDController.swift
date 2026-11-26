@@ -251,7 +251,7 @@ struct PillHUDView: View {
             if vertical {
                 VStack(spacing: 10) {
                     icon(with: fillColor)
-                    VerticalPillTrack(level: clampedLevel, fill: trackFill(vertical: true))
+                    VerticalPillTrack(level: clampedLevel, color: fillColor, stops: fillStops, glowRadius: trackGlowRadius)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     if settings.settings.hudShowPercentage {
                         percentageText
@@ -261,7 +261,7 @@ struct PillHUDView: View {
             } else {
                 HStack(spacing: 12) {
                     icon(with: fillColor)
-                    HorizontalPillTrack(level: clampedLevel, fill: trackFill(vertical: false))
+                    HorizontalPillTrack(level: clampedLevel, color: fillColor, stops: fillStops, glowRadius: trackGlowRadius)
                         .frame(maxWidth: .infinity)
                     if settings.settings.hudShowPercentage {
                         percentageText
@@ -282,11 +282,13 @@ struct PillHUDView: View {
             ZStack(alignment: vertical ? .bottom : .leading) {
                 Capsule().fill(Color.black.opacity(0.3))
                     .frame(width: width, height: height)
-                Capsule().fill(trackFill(vertical: vertical))
-                    .frame(
-                        width: vertical ? width : max(0, width * CGFloat(clampedLevel)),
-                        height: vertical ? max(0, height * CGFloat(clampedLevel)) : height
-                    )
+                HUDTrackFill(
+                    color: fillColor,
+                    stops: fillStops,
+                    level: CGFloat(clampedLevel),
+                    length: vertical ? height : width,
+                    axis: vertical ? .vertical : .horizontal
+                )
             }
             .clipShape(Capsule())
             .contentShape(Capsule())
@@ -385,58 +387,61 @@ struct PillHUDView: View {
 
     private var isXDR: Bool { isXDRBrightnessHUD }
 
+    private var palette: HUDLevelPalette { HUDLevelPalette(settings.settings) }
+
     private var fillColor: Color {
         switch settings.settings.hudVisualStyle {
         case .white: return Color.white.opacity(0.85)
-        case .color: return settings.settings.hudCustomColor?.color ?? .accentColor
-        case .adaptive:
-            if isXDRBrightnessHUD { return .orange }
-            if clampedLevel >= 0.9 { return .red }
-            if clampedLevel > 0.6 { return .yellow }
-            return .white
+        case .adaptive where isXDRBrightnessHUD: return .orange
+        default: return palette.color(at: clampedLevel)
         }
     }
 
-    private func trackFill(vertical: Bool) -> AnyShapeStyle {
-        guard isXDR else { return AnyShapeStyle(fillColor) }
-        return AnyShapeStyle(LinearGradient(
-            colors: [settings.settings.xdrHudGradientStart.color, settings.settings.xdrHudGradientEnd.color],
-            startPoint: vertical ? .bottom : .leading,
-            endPoint: vertical ? .top : .trailing
-        ))
+    private var fillStops: [Gradient.Stop]? {
+        guard isXDR else { return palette.trackStops }
+        // Above 100% brightness the track shows the user's XDR gradient.
+        return [.init(color: settings.settings.xdrHudGradientStart.color, location: 0),
+                .init(color: settings.settings.xdrHudGradientEnd.color, location: 1)]
     }
+
+    /// Kept small: the panel is only as big as the pill, so a wider glow would be cut off at its edges.
+    private var trackGlowRadius: CGFloat { palette.glowRadius(at: clampedLevel, maximum: 6) }
 }
 
 private struct VerticalPillTrack: View {
     let level: Float
-    let fill: AnyShapeStyle
+    let color: Color
+    let stops: [Gradient.Stop]?
+    let glowRadius: CGFloat
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottom) {
                 Capsule().fill(Color.white.opacity(0.14))
-                Capsule().fill(fill)
-                    .frame(height: max(0, geometry.size.height * CGFloat(level)))
+                HUDTrackFill(color: color, stops: stops, level: CGFloat(level), length: geometry.size.height, axis: .vertical)
                     .animation(.interactiveSpring(response: 0.38, dampingFraction: 0.82), value: level)
             }
             .clipShape(Capsule())
+            .hudTrackGlow(color: color, stops: stops, level: CGFloat(level), axis: .vertical, radius: glowRadius)
         }
     }
 }
 
 private struct HorizontalPillTrack: View {
     let level: Float
-    let fill: AnyShapeStyle
+    let color: Color
+    let stops: [Gradient.Stop]?
+    let glowRadius: CGFloat
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.14))
-                Capsule().fill(fill)
-                    .frame(width: max(0, geometry.size.width * CGFloat(level)))
+                HUDTrackFill(color: color, stops: stops, level: CGFloat(level), length: geometry.size.width)
                     .animation(.interactiveSpring(response: 0.38, dampingFraction: 0.82), value: level)
             }
             .clipShape(Capsule())
+            .hudTrackGlow(color: color, stops: stops, level: CGFloat(level), radius: glowRadius)
         }
     }
 }

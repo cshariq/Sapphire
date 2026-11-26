@@ -217,7 +217,26 @@ private struct NotchDisplayWidthKey: EnvironmentKey {
     static let defaultValue: CGFloat = 0
 }
 
+private struct NotchWidgetRowWidthLimitKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+private struct NotchIsFloatingIslandKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
+    var notchIsFloatingIsland: Bool {
+        get { self[NotchIsFloatingIslandKey.self] }
+        set { self[NotchIsFloatingIslandKey.self] = newValue }
+    }
+
+    /// Widest a row of home widgets may be before the menu wraps onto another row. Zero keeps one row.
+    var notchWidgetRowWidthLimit: CGFloat {
+        get { self[NotchWidgetRowWidthLimitKey.self] }
+        set { self[NotchWidgetRowWidthLimitKey.self] = newValue }
+    }
+
     var notchDisplayWidth: CGFloat {
         get { self[NotchDisplayWidthKey.self] }
         set { self[NotchDisplayWidthKey.self] = newValue }

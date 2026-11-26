@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import Foundation
+import IOKit.ps
 import IOKit.pwr_mgt
 import os.log
 
@@ -118,6 +119,8 @@ class CaffeineManager: ObservableObject {
     private let assertions = KeepAwakeAssertions()
 
     private var rootDomainClamshellActive = false
+    private var rootDomainReleaseDeferred = false
+    private var deferredReleaseObserver: NSObjectProtocol?
     private var helperSleepDisabledActive = false {
         didSet { updateSleepGuardMarker() }
     }
@@ -127,6 +130,9 @@ class CaffeineManager: ObservableObject {
     private var clamshellReleaseDebounceTask: Task<Void, Never>?
     private var powerGuardRefreshDebounceTask: Task<Void, Never>?
     private var screenParameterDebounceTask: Task<Void, Never>?
+    private var clamshellReassertTask: Task<Void, Never>?
+    private var powerSourceRunLoopSource: CFRunLoopSource?
+    private var lastProvidingPowerSource: String?
     private var timeoutTask: Task<Void, Never>?
     private var scheduledTimeoutMinutes: Double = 0
     private var oneShotTimeoutMinutes: Double?
@@ -227,6 +233,7 @@ class CaffeineManager: ObservableObject {
         clamshellReleaseDebounceTask?.cancel()
         powerGuardRefreshDebounceTask?.cancel()
         screenParameterDebounceTask?.cancel()
+        clamshellReassertTask?.cancel()
 
         assertions.releaseAll()
         releaseClamshellGuardIfNeeded()
@@ -290,6 +297,7 @@ class CaffeineManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.restoreCaffeinateIfNeeded()
+                self?.reassertClamshellGuardAfterSystemChange()
             }
             .store(in: &activeCancellables)
 
@@ -297,8 +305,11 @@ class CaffeineManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.scheduleClamshellReevaluation()
+                self?.reassertClamshellGuardAfterSystemChange()
             }
             .store(in: &activeCancellables)
+
+        installPowerSourceObserver()
 
         NotificationCenter.default.publisher(for: .sapphireHelperConnectionRestored)
             .receive(on: RunLoop.main)
@@ -319,6 +330,42 @@ class CaffeineManager: ObservableObject {
 
     private func removeActiveObservers() {
         activeCancellables.removeAll()
+        if let powerSourceRunLoopSource {
+            CFRunLoopSourceInvalidate(powerSourceRunLoopSource)
+            self.powerSourceRunLoopSource = nil
+        }
+        lastProvidingPowerSource = nil
+    }
+
+    private func installPowerSourceObserver() {
+        guard powerSourceRunLoopSource == nil else { return }
+        lastProvidingPowerSource = Self.providingPowerSource()
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        guard let source = IOPSNotificationCreateRunLoopSource({ context in
+            guard let context else { return }
+            let manager = Unmanaged<CaffeineManager>.fromOpaque(context).takeUnretainedValue()
+            MainActor.assumeIsolated { manager.powerSourceChanged() }
+        }, context)?.takeRetainedValue() else { return }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+        powerSourceRunLoopSource = source
+    }
+
+    private func powerSourceChanged() {
+        guard powerSourceRunLoopSource != nil else { return }
+        // IOPS also fires for every charge-level tick; only AC <-> battery flips matter here.
+        let source = Self.providingPowerSource()
+        guard source != lastProvidingPowerSource else { return }
+        lastProvidingPowerSource = source
+        os_log("CaffeineManager: Power source changed to %{public}@, re-asserting power guards.", source ?? "unknown")
+        reassertClamshellGuardAfterSystemChange()
+    }
+
+    private static func providingPowerSource() -> String? {
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let type = IOPSGetProvidingPowerSourceType(snapshot)?.takeUnretainedValue() else {
+            return nil
+        }
+        return type as String
     }
 
     // MARK: - Timeout
@@ -474,6 +521,25 @@ class CaffeineManager: ObservableObject {
         }
     }
 
+    // powerd re-evaluates the clamshell bit on AC/battery flips, display hot-plug and wake, and
+    // clears it whenever its own desktop-mode state drops to off - taking Sapphire's guard with
+    // it while rootDomainClamshellActive still reads true. Re-send the bit a few times so it
+    // lands after powerd's asynchronous update.
+    private func reassertClamshellGuardAfterSystemChange() {
+        guard shouldRemainActive else { return }
+        clamshellReassertTask?.cancel()
+        clamshellReassertTask = Task { @MainActor [weak self] in
+            for delay in [250, 1_500, 4_000, 10_000] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard !Task.isCancelled, let self, self.shouldRemainActive else { return }
+                if self.rootDomainClamshellActive, !setClamshellSleepDisabled(true) {
+                    os_log("CaffeineManager: Failed to re-assert the clamshell guard.")
+                }
+                self.refreshAllPowerGuards()
+            }
+        }
+    }
+
     private func schedulePowerGuardRefresh() {
         guard shouldRemainActive else { return }
         powerGuardRefreshDebounceTask?.cancel()
@@ -544,6 +610,7 @@ class CaffeineManager: ObservableObject {
 
         if setClamshellSleepDisabled(true) {
             rootDomainClamshellActive = true
+            cancelDeferredRootDomainRelease()
             updateSleepGuardMarker()
             os_log("CaffeineManager: Clamshell sleep disabled via IOPMrootDomain.")
             updateActiveState()
@@ -556,13 +623,60 @@ class CaffeineManager: ObservableObject {
 
     private func releaseClamshellGuardIfNeeded() {
         if rootDomainClamshellActive {
-            if !setClamshellSleepDisabled(false) {
-                os_log("CaffeineManager: Failed to restore clamshell sleep via IOPMrootDomain.")
-            }
             rootDomainClamshellActive = false
-            updateSleepGuardMarker()
+            releaseRootDomainClamshellGuard()
         }
         releaseHelperSleepDisabledIfNeeded()
+    }
+
+    // powerd drives this same IOPMrootDomain bit for desktop mode (lid closed with an external
+    // display) and only re-sends it when its own cached state flips. Clearing it while a display
+    // is attached therefore leaves the Mac sleeping on lid close until the display is replugged
+    // or the Mac reboots, so hand it back only once no external display is left.
+    private func releaseRootDomainClamshellGuard() {
+        if Self.hasExternalDisplay {
+            deferRootDomainRelease()
+            return
+        }
+        cancelDeferredRootDomainRelease()
+        if !setClamshellSleepDisabled(false) {
+            os_log("CaffeineManager: Failed to restore clamshell sleep via IOPMrootDomain.")
+        }
+        updateSleepGuardMarker()
+    }
+
+    private func deferRootDomainRelease() {
+        rootDomainReleaseDeferred = true
+        updateSleepGuardMarker()
+        guard deferredReleaseObserver == nil else { return }
+        os_log("CaffeineManager: External display attached, leaving clamshell sleep to powerd.")
+        deferredReleaseObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.rootDomainReleaseDeferred, !self.rootDomainClamshellActive else { return }
+                guard !Self.hasExternalDisplay else { return }
+                self.releaseRootDomainClamshellGuard()
+            }
+        }
+    }
+
+    private func cancelDeferredRootDomainRelease() {
+        rootDomainReleaseDeferred = false
+        if let deferredReleaseObserver {
+            NotificationCenter.default.removeObserver(deferredReleaseObserver)
+            self.deferredReleaseObserver = nil
+        }
+    }
+
+    private static var hasExternalDisplay: Bool {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return false }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return false }
+        return displays.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) == 0 }
     }
 
     private func requestHelperSleepDisabled() {
@@ -613,7 +727,7 @@ class CaffeineManager: ObservableObject {
     }
 
     private func updateSleepGuardMarker() {
-        let engaged = rootDomainClamshellActive || helperSleepDisabledActive
+        let engaged = rootDomainClamshellActive || rootDomainReleaseDeferred || helperSleepDisabledActive
         let defaults = UserDefaults.standard
         if defaults.bool(forKey: Self.sleepGuardMarkerKey) != engaged {
             defaults.set(engaged, forKey: Self.sleepGuardMarkerKey)
@@ -623,8 +737,8 @@ class CaffeineManager: ObservableObject {
     private func recoverStaleSleepGuardIfNeeded() {
         guard UserDefaults.standard.bool(forKey: Self.sleepGuardMarkerKey) else { return }
         os_log("CaffeineManager: Restoring sleep left disabled by a previous session.")
-        _ = setClamshellSleepDisabled(false)
         UserDefaults.standard.set(false, forKey: Self.sleepGuardMarkerKey)
+        releaseRootDomainClamshellGuard()
         guard let helper = BatteryManager.shared.getHelper() else { return }
         helper.allowSystemSleep { error in
             guard error != nil else { return }

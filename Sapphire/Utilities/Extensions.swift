@@ -58,6 +58,7 @@ enum SystemPreferencesPane {
     case screenCapture
     case bluetooth
     case allFiles
+    case inputMonitoring
 
     var url: URL {
         let suffix: String
@@ -68,6 +69,7 @@ enum SystemPreferencesPane {
         case .screenCapture: suffix = "Privacy_ScreenCapture"
         case .bluetooth: suffix = "Privacy_Bluetooth"
         case .allFiles: suffix = "Privacy_AllFiles"
+        case .inputMonitoring: suffix = "Privacy_ListenEvent"
         }
         return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(suffix)")!
     }

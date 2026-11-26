@@ -264,7 +264,7 @@ struct MusicPlayerView: View {
         var parts: [String] = []
         if let genre = details.genreNames.first { parts.append(genre) }
         if let date = details.releaseDate { parts.append(String(Calendar.current.component(.year, from: date))) }
-        if let plays = details.playCount, plays > 0 { parts.append("\(plays) \(plays == 1 ? "play" : "plays") by you") }
+        if let plays = details.playCount, plays > 0 { parts.append(String(localized: "\(plays) plays by you")) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
@@ -333,190 +333,195 @@ struct MusicPlayerView: View {
     private var artworkSection: some View {
         HStack(spacing: 12) {
             ZStack {
-                    let showLiveCanvas = settings.settings.spotifyCanvasLiveVideo
-                        && !isLockScreenMode
-                        && isSpotifyPlaying
-                        && musicManager.spotifyPrivateAPI.currentCanvas?.isPlayableVideo == true
-                    let canvasURL = showLiveCanvas ? musicManager.spotifyPrivateAPI.currentCanvas?.videoURL : nil
-                    if let canvasURL {
-                        SpotifyCanvasView(canvasURL: canvasURL) { ready in
-                            readyCanvasURL = ready ? canvasURL : (readyCanvasURL == canvasURL ? nil : readyCanvasURL)
-                        }
-                        .frame(width: 56, height: 56)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .id(canvasURL)
+                let showLiveCanvas = settings.settings.spotifyCanvasLiveVideo
+                    && !isLockScreenMode
+                    && isSpotifyPlaying
+                    && musicManager.spotifyPrivateAPI.currentCanvas?.isPlayableVideo == true
+                let canvasURL = showLiveCanvas ? musicManager.spotifyPrivateAPI.currentCanvas?.videoURL : nil
+                if let canvasURL {
+                    SpotifyCanvasView(canvasURL: canvasURL) { ready in
+                        readyCanvasURL = ready ? canvasURL : (readyCanvasURL == canvasURL ? nil : readyCanvasURL)
                     }
-
-                    let isShowingVideo = canvasURL != nil && readyCanvasURL == canvasURL
-                    MusicArtworkImage(image: musicManager.artwork, size: 56, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .opacity(isShowingVideo ? 0.0 : 1.0)
-                        .animation(.easeInOut(duration: 0.3), value: isShowingVideo)
-                        .compositingGroup()
-                        .shadow(color: musicManager.accentColor.opacity(0.35), radius: 6, y: 3)
-                        .id(musicManager.currentTrackArtworkToken)
-                        .transition(.notchArtworkSwap)
-
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
-                        .scaleEffect(showLikeAnimation ? 1.0 : 0.45)
-                        .opacity(showLikeAnimation ? 1.0 : 0.0)
-                        .frame(width: 56, height: 56)
-
-                    if showConcertTickets {
-                        Button {
-                            handleButtonTap(for: .musicQueueAndPlaylists)
-                            UserDefaults.standard.set(0, forKey: "lastSelectedMusicPane")
-                        } label: {
-                            Image(systemName: "ticket.fill")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 18, height: 18)
-                                .background(Color.pink.gradient, in: Circle())
-                                .shadow(color: .pink.opacity(0.45), radius: 3, y: 1)
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 56, height: 56, alignment: .bottomTrailing)
-                        .offset(x: 4, y: 4)
-                        .help("Nearby concerts")
-                    }
-                }
-                .frame(width: 56, height: 56)
-                .animation(.easeInOut, value: showTemporaryLikedGlow)
-                .onTapGesture(count: 2) {
-                    guard isSpotifyOrAppleMusic else { return }
-                    Task {
-                        let wasLiked = musicManager.isLiked
-                        await musicManager.toggleLike()
-                        if musicManager.isLiked || musicManager.isLiked != wasLiked {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) { showLikeAnimation = true }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                                withAnimation { showLikeAnimation = false }
-                            }
-                        }
-                    }
-                }
-                .onTapGesture {
-                    if isLockScreenMode {
-                        LockScreenMusicPaneController.shared.open()
-                    } else {
-                        musicManager.openInSourceApp()
-                    }
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .id(canvasURL)
                 }
 
-                Button(action: { handleButtonTap(for: .musicQueueAndPlaylists) }) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
+                let isShowingVideo = canvasURL != nil && readyCanvasURL == canvasURL
+                MusicArtworkImage(image: musicManager.artwork, size: 56, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .opacity(isShowingVideo ? 0.0 : 1.0)
+                    .animation(.easeInOut(duration: 0.3), value: isShowingVideo)
+                    .compositingGroup()
+                    .shadow(color: musicManager.accentColor.opacity(0.35), radius: 6, y: 3)
+                    .id(musicManager.currentTrackArtworkToken)
+                    .transition(.notchArtworkSwap)
+
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.35), radius: 4, y: 1)
+                    .scaleEffect(showLikeAnimation ? 1.0 : 0.45)
+                    .opacity(showLikeAnimation ? 1.0 : 0.0)
+                    .frame(width: 56, height: 56)
+
+                if showConcertTickets {
+                    Button {
+                        handleButtonTap(for: .musicQueueAndPlaylists)
+                        UserDefaults.standard.set(0, forKey: "lastSelectedMusicPane")
+                    } label: {
+                        Image(systemName: "ticket.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 18, height: 18)
+                            .background(Color.pink.gradient, in: Circle())
+                            .shadow(color: .pink.opacity(0.45), radius: 3, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 56, height: 56, alignment: .bottomTrailing)
+                    .offset(x: 4, y: 4)
+                    .help("Nearby concerts")
+                }
+            }
+            .frame(width: 56, height: 56)
+            .animation(.easeInOut, value: showTemporaryLikedGlow)
+            .onTapGesture(count: 2) {
+                guard isSpotifyOrAppleMusic else { return }
+                Task {
+                    let wasLiked = musicManager.isLiked
+                    await musicManager.toggleLike()
+                    if musicManager.isLiked || musicManager.isLiked != wasLiked {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) { showLikeAnimation = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            withAnimation { showLikeAnimation = false }
+                        }
+                    }
+                }
+            }
+            .onTapGesture {
+                if isLockScreenMode {
+                    LockScreenMusicPaneController.shared.open()
+                } else {
+                    musicManager.openInSourceApp()
+                }
+            }
+
+            Button(action: { handleButtonTap(for: .musicQueueAndPlaylists) }) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        MarqueeText(
+                            
                             Text(musicManager.title ?? String(localized: "Title"))
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .lineLimit(1)
-                        }
+                        )
+                    }
 
-                        if let artist = spotifyArtist {
-                            HStack(spacing: 6) {
-                                if let url = artist.avatarURL ?? artist.headerImageURL {
-                                    CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: {
-                                        Circle().fill(Color.white.opacity(0.1))
-                                    }
-                                    .frame(width: 16, height: 16)
-                                    .clipShape(Circle())
-                                    .id(artist.uri)
+                    if let artist = spotifyArtist {
+                        HStack(spacing: 6) {
+                            if let url = artist.avatarURL ?? artist.headerImageURL {
+                                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: {
+                                    Circle().fill(Color.white.opacity(0.1))
                                 }
-                                Text(artist.name)
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                if artist.isVerified {
-                                    Image(systemName: "checkmark.seal.fill")
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.cyan)
-                                }
+                                .frame(width: 16, height: 16)
+                                .clipShape(Circle())
+                                .id(artist.uri)
                             }
-                            HStack(spacing: 8) {
-                                if let listeners = artist.monthlyListeners ?? artist.followers {
-                                    Text("\(formattedListenerCount(listeners)) monthly listeners")
-                                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                }
+                            Text(artist.name)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            if artist.isVerified {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.cyan)
                             }
-                        } else if let artist = appleArtist {
-                            HStack(spacing: 6) {
-                                if let url = artist.artworkURL {
-                                    CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: {
-                                        Circle().fill(Color.white.opacity(0.1))
-                                    }
-                                    .frame(width: 16, height: 16)
-                                    .clipShape(Circle())
-                                    .id(artist.id)
-                                }
-                                Text(musicManager.artist ?? artist.name)
-                                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            if let subtitle = appleArtistSubtitle {
-                                Text(subtitle)
+                        }
+                        HStack(spacing: 8) {
+                            if let listeners = artist.monthlyListeners ?? artist.followers {
+                                Text("Monthly Listener: \(formattedListenerCount(listeners))")
                                     .font(.system(size: 10, weight: .medium, design: .rounded))
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
                             }
-                        } else {
-                            Text(musicManager.artist ?? String(localized: "Artist"))
-                                .font(.system(size: 12, design: .rounded))
+                        }
+                    } else if let artist = appleArtist {
+                        HStack(spacing: 6) {
+                            if let url = artist.artworkURL {
+                                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: {
+                                    Circle().fill(Color.white.opacity(0.1))
+                                }
+                                .frame(width: 16, height: 16)
+                                .clipShape(Circle())
+                                .id(artist.id)
+                            }
+                            Text(musicManager.artist ?? artist.name)
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
+                        if let subtitle = appleArtistSubtitle {
+                            Text(subtitle)
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    } else {
+                        Text(musicManager.artist ?? String(localized: "Artist"))
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
-                .buttonStyle(.plain)
-                .id("track-\(musicManager.uri ?? musicManager.title ?? "")-\(musicManager.artist ?? "")")
+            }
+            .buttonStyle(.plain)
+            .id("track-\(musicManager.uri ?? musicManager.title ?? "")-\(musicManager.artist ?? "")")
+            // The title takes the width it needs before the trailing accessory grows past its minimum.
+            .layoutPriority(1)
 
-                Spacer(minLength: 4)
+            Spacer(minLength: 4)
 
-                VStack(alignment: .trailing, spacing: 6) {
-                    if let pill = nextTrackPillInfo {
-                        ZStack(alignment: .topTrailing) {
-                            NextTrackInline(
-                                title: pill.title,
-                                artist: pill.artist,
-                                artworkURL: nextTrackArtworkURL,
-                                accent: musicManager.accentColor
-                            ) {
-                                handleButtonTap(for: .musicQueueAndPlaylists)
-                                UserDefaults.standard.set(0, forKey: "lastSelectedMusicPane")
-                            }
-                            .id("next-inline-\(pill.title)-\(pill.artist)")
-                            .transition(.opacity)
+            VStack(alignment: .trailing, spacing: 6) {
+                if let pill = nextTrackPillInfo {
+                    ZStack(alignment: .topTrailing) {
+                        NextTrackInline(
+                            title: pill.title,
+                            artist: pill.artist,
+                            artworkURL: nextTrackArtworkURL,
+                            accent: musicManager.accentColor
+                        ) {
+                            handleButtonTap(for: .musicQueueAndPlaylists)
+                            UserDefaults.standard.set(0, forKey: "lastSelectedMusicPane")
+                        }
+                        .id("next-inline-\(pill.title)-\(pill.artist)")
+                        .transition(.opacity)
 
+                        if settings.settings.showPopularityInMusicPlayer {
+                            popularityAccessory
+                                .id("pop-\(musicManager.uri ?? "")-\(musicManager.playCountValue ?? -1)-\(musicManager.popularity ?? -1)")
+                                .padding(.trailing, 4)
+                                .offset(y: -26)
+                        }
+                    }
+                    .offset(y: 8)
+                    .transition(.opacity)
+                } else {
+                    WaveformView()
+                        .scaleEffect(1.05)
+                        .overlay(alignment: .topTrailing) {
                             if settings.settings.showPopularityInMusicPlayer {
                                 popularityAccessory
                                     .id("pop-\(musicManager.uri ?? "")-\(musicManager.playCountValue ?? -1)-\(musicManager.popularity ?? -1)")
-                                    .padding(.trailing, 4)
-                                    .offset(y: -26)
+                                    .fixedSize()
+                                    .offset(y: -24)
                             }
                         }
-                        .offset(y: 8)
                         .transition(.opacity)
-                    } else {
-                        WaveformView()
-                            .scaleEffect(1.05)
-                            .overlay(alignment: .topTrailing) {
-                                if settings.settings.showPopularityInMusicPlayer {
-                                    popularityAccessory
-                                        .id("pop-\(musicManager.uri ?? "")-\(musicManager.playCountValue ?? -1)-\(musicManager.popularity ?? -1)")
-                                        .fixedSize()
-                                        .offset(y: -24)
-                                }
-                            }
-                            .transition(.opacity)
-                    }
                 }
-                .frame(minWidth: 110, maxWidth: 168, alignment: .trailing)
-                .animation(.easeInOut(duration: 0.2), value: nextTrackPillInfo?.title)
             }
+            // Only the next-track pill needs a reserved width; the waveform alone is a few points wide.
+            .frame(minWidth: nextTrackPillInfo == nil ? nil : 110, maxWidth: 168, alignment: .trailing)
+            .animation(.easeInOut(duration: 0.2), value: nextTrackPillInfo?.title)
+        }
     }
 
     private var controlsSection: some View {
@@ -524,109 +529,109 @@ struct MusicPlayerView: View {
             PlayerProgressView()
 
             if reservesSuggestionSlot {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(suggestedTracks) { track in
-                                    Button {
-                                        Task { await track.play() }
-                                    } label: {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: "sparkles")
-                                                .font(.system(size: 8, weight: .bold))
-                                            Text(track.name)
-                                                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                                .lineLimit(1)
-                                        }
-                                        .padding(.horizontal, 9)
-                                        .padding(.vertical, 5)
-                                        .background(musicManager.accentColor.opacity(0.16), in: Capsule())
-                                        .foregroundStyle(musicManager.accentColor)
-                                    }
-                                    .buttonStyle(.plain)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(suggestedTracks) { track in
+                            Button {
+                                Task { await track.play() }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 8, weight: .bold))
+                                    Text(track.name)
+                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                        .lineLimit(1)
                                 }
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(musicManager.accentColor.opacity(0.16), in: Capsule())
+                                .foregroundStyle(musicManager.accentColor)
                             }
-                            .padding(.leading, 2)
+                            .buttonStyle(.plain)
                         }
-                        .frame(height: Self.suggestionRowHeight)
-                        .opacity(suggestedTracks.isEmpty ? 0 : 1)
-                        .animation(.easeInOut(duration: 0.25), value: suggestedTracks.isEmpty)
-                        .padding(.top, 1)
                     }
+                    .padding(.leading, 2)
+                }
+                .frame(height: Self.suggestionRowHeight)
+                .opacity(suggestedTracks.isEmpty ? 0 : 1)
+                .animation(.easeInOut(duration: 0.25), value: suggestedTracks.isEmpty)
+                .padding(.top, 1)
+            }
 
-                    if reservesLyricSlot {
-                        LyricTextView(
-                            navigationStack: $navigationStack,
-                            isLockScreenMode: isLockScreenMode,
-                            onCustomTap: onLyricsTap
-                        )
-                    }
+            if reservesLyricSlot {
+                LyricTextView(
+                    navigationStack: $navigationStack,
+                    isLockScreenMode: isLockScreenMode,
+                    onCustomTap: onLyricsTap
+                )
+            }
 
-                    HStack {
-                        MusicPlayerActionButton(type: primaryButtons.first, size: .primary)
-                        Spacer()
-                        SeekButton(
-                            systemName: "backward.fill",
-                            onTap: { Task { await musicManager.previousTrack() } },
-                            onSeek: { isForward in Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) } },
-                            onLongPressAction: skipHoldClosure(for: .previous),
-                            holdAction: skipHoldAction(for: .previous),
-                            onHoldBegan: { action in
-                                beginHoldFeedback(action: action, buttonID: "previous")
-                            },
-                            onHoldEnded: endHoldFeedback,
-                            displayedSystemName: holdFeedbackButtonID == "previous" ? holdFeedbackIcon : nil
-                        )
-                        .frame(width: 44, height: 44)
-                        .foregroundStyle(holdFeedbackButtonID == "previous" ? holdFeedbackColor : .primary)
-                        .help(MusicLongPressUI.skipHelp(primary: String(localized: "music.playback.previous", defaultValue: "Previous"), target: .previous, settings: settings.settings.value))
-                        Spacer()
-                        LongPressControlButton(
-                            onTap: { Task { await (musicManager.isPlaying ? musicManager.pause() : musicManager.play()) } },
-                            onLongPress: accessoryLongPressHandler(for: .playPause),
-                            onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "playPause") },
-                            holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .playPause),
-                            onHoldEnded: endHoldFeedback
-                        ) {
-                            Image(systemName: holdFeedbackButtonID == "playPause"
-                                  ? (holdFeedbackIcon ?? (musicManager.isPlaying ? "pause.fill" : "play.fill"))
-                                  : (musicManager.isPlaying ? "pause.fill" : "play.fill"))
-                                .font(.system(size: 28))
-                                .contentTransition(.symbolEffect(.replace))
-                                .foregroundStyle(holdFeedbackButtonID == "playPause" ? holdFeedbackColor : .primary)
-                        }
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                        .notchHoverTile(size: 52)
-                        .animation(.easeInOut(duration: 0.15), value: musicManager.isPlaying)
-                        .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
-                        .help(MusicLongPressUI.accessoryHelp(primary: String(localized: "Play / Pause"), target: .playPause, settings: settings.settings.value))
-                        Spacer()
-                        SeekButton(
-                            systemName: "forward.fill",
-                            onTap: { Task { await musicManager.nextTrack() } },
-                            onSeek: { isForward in Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) } },
-                            onLongPressAction: skipHoldClosure(for: .next),
-                            holdAction: skipHoldAction(for: .next),
-                            onHoldBegan: { action in
-                                beginHoldFeedback(action: action, buttonID: "next")
-                            },
-                            onHoldEnded: endHoldFeedback,
-                            displayedSystemName: holdFeedbackButtonID == "next" ? holdFeedbackIcon : nil
-                        )
-                        .frame(width: 44, height: 44)
-                        .foregroundStyle(holdFeedbackButtonID == "next" ? holdFeedbackColor : .primary)
-                        .help(MusicLongPressUI.skipHelp(primary: String(localized: "music.playback.next", defaultValue: "Next"), target: .next, settings: settings.settings.value))
-                        Spacer()
-                        MusicPlayerActionButton(type: primaryButtons.dropFirst().first, size: .primary)
-                    }
-                    .buttonStyle(PlainButtonStyle()).font(.system(size: 22)).foregroundColor(.primary)
-                    .padding(.top, (!reservesLyricSlot && accessoryButtons.isEmpty) ? 8 : 0)
-                    .padding(.bottom, !reservesLyricSlot ? 4 : 0)
+            HStack {
+                MusicPlayerActionButton(type: primaryButtons.first, size: .primary)
+                Spacer()
+                SeekButton(
+                    systemName: "backward.fill",
+                    onTap: { Task { await musicManager.previousTrack() } },
+                    onSeek: { isForward in Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) } },
+                    onLongPressAction: skipHoldClosure(for: .previous),
+                    holdAction: skipHoldAction(for: .previous),
+                    onHoldBegan: { action in
+                        beginHoldFeedback(action: action, buttonID: "previous")
+                    },
+                    onHoldEnded: endHoldFeedback,
+                    displayedSystemName: holdFeedbackButtonID == "previous" ? holdFeedbackIcon : nil
+                )
+                .frame(width: 44, height: 44)
+                .foregroundStyle(holdFeedbackButtonID == "previous" ? holdFeedbackColor : .primary)
+                .help(MusicLongPressUI.skipHelp(primary: String(localized: "music.playback.previous", defaultValue: "Previous"), target: .previous, settings: settings.settings.value))
+                Spacer()
+                LongPressControlButton(
+                    onTap: { Task { await (musicManager.isPlaying ? musicManager.pause() : musicManager.play()) } },
+                    onLongPress: accessoryLongPressHandler(for: .playPause),
+                    onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "playPause") },
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .playPause),
+                    onHoldEnded: endHoldFeedback
+                ) {
+                    Image(systemName: holdFeedbackButtonID == "playPause"
+                          ? (holdFeedbackIcon ?? (musicManager.isPlaying ? "pause.fill" : "play.fill"))
+                          : (musicManager.isPlaying ? "pause.fill" : "play.fill"))
+                        .font(.system(size: 28))
+                        .contentTransition(.symbolEffect(.replace))
+                        .foregroundStyle(holdFeedbackButtonID == "playPause" ? holdFeedbackColor : .primary)
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .notchHoverTile(size: 52)
+                .animation(.easeInOut(duration: 0.15), value: musicManager.isPlaying)
+                .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
+                .help(MusicLongPressUI.accessoryHelp(primary: String(localized: "Play / Pause"), target: .playPause, settings: settings.settings.value))
+                Spacer()
+                SeekButton(
+                    systemName: "forward.fill",
+                    onTap: { Task { await musicManager.nextTrack() } },
+                    onSeek: { isForward in Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) } },
+                    onLongPressAction: skipHoldClosure(for: .next),
+                    holdAction: skipHoldAction(for: .next),
+                    onHoldBegan: { action in
+                        beginHoldFeedback(action: action, buttonID: "next")
+                    },
+                    onHoldEnded: endHoldFeedback,
+                    displayedSystemName: holdFeedbackButtonID == "next" ? holdFeedbackIcon : nil
+                )
+                .frame(width: 44, height: 44)
+                .foregroundStyle(holdFeedbackButtonID == "next" ? holdFeedbackColor : .primary)
+                .help(MusicLongPressUI.skipHelp(primary: String(localized: "music.playback.next", defaultValue: "Next"), target: .next, settings: settings.settings.value))
+                Spacer()
+                MusicPlayerActionButton(type: primaryButtons.dropFirst().first, size: .primary)
+            }
+            .buttonStyle(PlainButtonStyle()).font(.system(size: 22)).foregroundColor(.primary)
+            .padding(.top, (!reservesLyricSlot && accessoryButtons.isEmpty) ? 8 : 0)
+            .padding(.bottom, !reservesLyricSlot ? 4 : 0)
 
-                    if !accessoryButtons.isEmpty {
-                        HStack(spacing: 25) { ForEach(accessoryButtons) { buttonType in MusicPlayerActionButton(type: buttonType, size: .accessory) } }
-                        .frame(maxWidth: .infinity).padding(.top, 4)
-                    }
+            if !accessoryButtons.isEmpty {
+                HStack(spacing: 25) { ForEach(accessoryButtons) { buttonType in MusicPlayerActionButton(type: buttonType, size: .accessory) } }
+                .frame(maxWidth: .infinity).padding(.top, 4)
+            }
         }
     }
 
@@ -681,9 +686,18 @@ struct MusicPlayerView: View {
         return "\(value)"
     }
 
+    /// Mirrors the hub's own login gate so a tap never shows a prompt the hub itself wouldn't.
+    private var needsSpotifyLogin: Bool {
+        !musicManager.isPrivateAPIAuthenticated
+            && !musicManager.isOfficialAPIAuthenticated
+            && !musicManager.isAppleMusicContext
+            && !musicManager.isOtherPlayerSourceActive
+            && !musicManager.isTidalContext
+    }
+
     private func handleButtonTap(for targetMode: NotchWidgetMode) {
         if let onQueueAction, targetMode == .musicQueueAndPlaylists {
-            if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
+            if needsSpotifyLogin {
                 onLoginAction?()
                 return
             }
@@ -709,12 +723,12 @@ struct MusicPlayerView: View {
             case .musicLoginPrompt: destination = .loginPrompt
             default: return
             }
-            if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
+            if needsSpotifyLogin {
                 if targetMode != .musicDevices { navigationManager.navigateTo(.loginPrompt); return }
             }
             navigationManager.navigateTo(destination)
         } else {
-            if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
+            if needsSpotifyLogin {
                 if targetMode != .musicDevices { navigationStack.append(.musicLoginPrompt); return }
             }
             navigationStack.append(targetMode)

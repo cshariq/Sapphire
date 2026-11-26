@@ -84,6 +84,7 @@ enum MouseButtonAction: String, Codable, CaseIterable, Identifiable {
     case missionControl, launchpad, showDesktop, appSwitcher, spotlight
     case closeWindow, minimize, newTab, newWindow, reload, fullScreen
     case lockScreen, openSapphireSettings
+    case switchDesktopLeft, switchDesktopRight, customHotkey
 
     var id: String { rawValue }
 }

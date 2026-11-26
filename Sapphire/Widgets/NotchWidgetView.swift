@@ -10,25 +10,20 @@ import SwiftUI
 enum MusicWidgetVisibilityPolicy {
     static func shouldShow(
         isEnabled: Bool,
-        hideWhenNotPlaying: Bool,
+        visibility: MusicWidgetVisibility,
         isPlaying: Bool,
-        hidePausedSpotifyWhenIdle: Bool,
-        isSpotifyPausedWithNoOtherPlayback: Bool,
-        hideSpotifyWhenAppClosed: Bool,
-        isLoggedIntoSpotify: Bool,
-        isSpotifyOnlySource: Bool,
-        isSpotifyAppRunning: Bool
+        hasTrack: Bool,
+        isClosedSpotifyOnlySource: Bool
     ) -> Bool {
         guard isEnabled else { return false }
-        if hideWhenNotPlaying && !isPlaying { return false }
-        if hidePausedSpotifyWhenIdle && isSpotifyPausedWithNoOtherPlayback { return false }
-        if hideSpotifyWhenAppClosed,
-           isLoggedIntoSpotify,
-           isSpotifyOnlySource,
-           !isSpotifyAppRunning {
-            return false
+        switch visibility {
+        case .always:
+            return true
+        case .whenSongLoaded:
+            return isPlaying || (hasTrack && !isClosedSpotifyOnlySource)
+        case .whilePlaying:
+            return isPlaying
         }
-        return true
     }
 }
 
@@ -262,6 +257,8 @@ struct NotchWidgetView: View {
 private struct NotchDefaultWidgetsView: View {
     @Environment(\.navigationStack) private var navigationStack
     @Environment(\.notchDisplayWidth) private var notchDisplayWidth
+    @Environment(\.notchWidgetRowWidthLimit) private var rowWidthLimit
+    @Environment(\.notchIsFloatingIsland) private var isFloatingIsland
     @Environment(\.isCalendarHovered) private var isCalendarHovered
     @ObservedSettings private var settings: SettingsObserver
     @State private var musicVisibility: MusicWidgetVisibilitySnapshot
@@ -316,42 +313,53 @@ private struct NotchDefaultWidgetsView: View {
             }
         }
 
+        let singleIslandRow = isFloatingIsland && rowWidthLimit <= 0
         return WidgetLayoutPolicy.fittingWidgets(
             from: enabled,
-            availableWidth: WidgetLayoutPolicy.availableBarWidth(notchDisplayWidth: notchDisplayWidth),
+            availableWidth: singleIslandRow
+                ? WidgetLayoutPolicy.islandSingleRowWidth(notchDisplayWidth: notchDisplayWidth)
+                : WidgetLayoutPolicy.availableBarWidth(notchDisplayWidth: notchDisplayWidth),
             showDividers: settings.settings.showDividersBetweenWidgets,
-            bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
+            bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit,
+            countsMusic: singleIslandRow
         )
     }
 
     private var showsMusicWidget: Bool {
         MusicWidgetVisibilityPolicy.shouldShow(
             isEnabled: settings.settings.musicWidgetEnabled,
-            hideWhenNotPlaying: settings.settings.hideMusicWidgetWhenNotPlaying,
+            visibility: settings.settings.musicWidgetVisibility,
             isPlaying: musicVisibility.isPlaying,
-            hidePausedSpotifyWhenIdle: settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle,
-            isSpotifyPausedWithNoOtherPlayback: musicVisibility.isSpotifyPausedWithNoOtherPlayback,
-            hideSpotifyWhenAppClosed: settings.settings.hideSpotifyWidgetWhenAppClosed,
-            isLoggedIntoSpotify: musicVisibility.isLoggedIntoSpotify,
-            isSpotifyOnlySource: musicVisibility.isSpotifyOnlySource,
-            isSpotifyAppRunning: musicVisibility.isSpotifyAppRunning
+            hasTrack: musicVisibility.hasTrack,
+            isClosedSpotifyOnlySource: musicVisibility.isClosedSpotifyOnlySource
         )
     }
 
     var body: some View {
-        let widgets = enabledAndOrderedWidgets
-        HStack(spacing: 20) {
-            ForEach(widgets) { widgetType in
-                widgetView(for: widgetType)
-                    .id(widgetType)
+        let showDividers = settings.settings.showDividersBetweenWidgets
+        let ordered = enabledAndOrderedWidgets
+        let rows = WidgetLayoutPolicy.rows(for: ordered, maxRowWidth: rowWidthLimit, showDividers: showDividers)
+        let extraPadding = isFloatingIsland && rows.count == 1
+            ? WidgetLayoutPolicy.islandSingleRowExtraPadding(for: ordered, showDividers: showDividers)
+            : 0
+        VStack(spacing: WidgetLayoutPolicy.rowSpacing) {
+            ForEach(Array(rows.enumerated()), id: \.element) { index, widgets in
+                HStack(spacing: WidgetLayoutPolicy.interWidgetSpacing) {
+                    ForEach(widgets) { widgetType in
+                        widgetView(for: widgetType)
+                            .id(widgetType)
 
-                if widgetType != widgets.last && settings.settings.showDividersBetweenWidgets {
-                    Divider()
-                        .frame(height: 60)
-                        .background(Color.white.opacity(0.3))
+                        if widgetType != widgets.last && showDividers {
+                            Divider()
+                                .frame(height: 60)
+                                .background(Color.white.opacity(0.3))
+                        }
+                    }
                 }
+                .padding(rowTrim(widgets, isFirst: index == 0, isLast: index == rows.count - 1))
             }
         }
+        .padding(extraPadding)
         .onAppear {
             // The view stays alive between openings; each opening starts from the hide rules again.
             keepsMusicWidgetUntilClosed = false
@@ -368,6 +376,19 @@ private struct NotchDefaultWidgetsView: View {
         ) { _ in
             refreshMusicVisibility()
         }
+    }
+
+    /// On the island the card's margins should look equal on all four sides, so padding that the widgets at a
+    /// row's ends carry inside their own frames is taken back out.
+    private func rowTrim(_ widgets: [WidgetType], isFirst: Bool, isLast: Bool) -> EdgeInsets {
+        guard isFloatingIsland, let first = widgets.first, let last = widgets.last else { return EdgeInsets() }
+        let vertical = WidgetLayoutPolicy.rowVerticalSlack(for: widgets)
+        return EdgeInsets(
+            top: isFirst ? -vertical : 0,
+            leading: -WidgetLayoutPolicy.builtInSidePadding(for: first),
+            bottom: isLast ? -vertical : 0,
+            trailing: -WidgetLayoutPolicy.builtInSidePadding(for: last)
+        )
     }
 
     private static let musicVisibilityChanges = observationPublisher {
@@ -500,21 +521,18 @@ private struct NotchDefaultWidgetsView: View {
 
 private struct MusicWidgetVisibilitySnapshot: Equatable {
     let isPlaying: Bool
-    let isSpotifyPausedWithNoOtherPlayback: Bool
-    let isLoggedIntoSpotify: Bool
-    let isSpotifyOnlySource: Bool
-    let isSpotifyAppRunning: Bool
+    let hasTrack: Bool
+    /// A logged-in Spotify account keeps reporting the last track after the app quits.
+    let isClosedSpotifyOnlySource: Bool
 
     @MainActor
     init(manager: MusicManager) {
         isPlaying = manager.isPlaying
-        isSpotifyPausedWithNoOtherPlayback = manager.isSpotifyPausedWithNoSystemMediaPlaying
-        isLoggedIntoSpotify = manager.spotifyPrivateAPI.isLoggedIn
-        isSpotifyOnlySource = manager.isSpotifySourceSelected
-            && manager.activeMediaSources.keys.allSatisfy { key in
-                key == "com.spotify.client:spotify-live" || key.hasPrefix("com.spotify.client")
-            }
-        isSpotifyAppRunning = RunningApps.shared.isRunning("com.spotify.client")
+        hasTrack = !(manager.title ?? "").isEmpty
+        isClosedSpotifyOnlySource = manager.spotifyPrivateAPI.isLoggedIn
+            && manager.isSpotifySourceSelected
+            && manager.activeMediaSources.keys.allSatisfy { $0.hasPrefix("com.spotify.client") }
+            && !RunningApps.shared.isRunning("com.spotify.client")
     }
 }
 

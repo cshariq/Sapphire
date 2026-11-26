@@ -100,6 +100,8 @@ final class NotchLayerSurfaceView: NSView {
     private let rimGradient = CAGradientLayer()
     private let rimMask = CAShapeLayer()
     private var glowLayers: [CAShapeLayer] = []
+    private let edgeLayer = CAShapeLayer()
+    private var edge: NSColor?
     private var rim: NSColor?
 
     private var shape: CustomNotchShape?
@@ -123,6 +125,7 @@ final class NotchLayerSurfaceView: NSView {
         let gradient: Bool
         let glowCount: Int
         let rim: Bool
+        let edge: Bool
         let windowOrigin: CGPoint?
     }
 
@@ -161,6 +164,9 @@ final class NotchLayerSurfaceView: NSView {
         rimGradient.mask = rimMask
         rimGradient.isHidden = true
         gradientLayer.addSublayer(rimGradient)
+        edgeLayer.actions = Self.noActions
+        edgeLayer.isHidden = true
+        layer?.addSublayer(edgeLayer)
         layer?.addSublayer(shapeLayer)
         layer?.addSublayer(gradientLayer)
         layer?.addSublayer(rimLayer)
@@ -180,6 +186,7 @@ final class NotchLayerSurfaceView: NSView {
         shadow: Shadow,
         glows: [Shadow] = [],
         rim: NSColor? = nil,
+        edge: NSColor? = nil,
         shadowAnimation: Animation? = nil
     ) {
         if self.engine !== engine {
@@ -188,7 +195,8 @@ final class NotchLayerSurfaceView: NSView {
             engine.addRenderer(
                 self,
                 render: { [weak self] frame in self?.renderOutline(frame) },
-                animate: { [weak self] timeline in self?.animateOutline(timeline) }
+                animate: { [weak self] timeline in self?.animateOutline(timeline) },
+                cancel: { [weak self] in self?.cancelOutlineTimeline() }
             )
         }
         CATransaction.begin()
@@ -212,6 +220,9 @@ final class NotchLayerSurfaceView: NSView {
         if rim != self.rim {
             self.rim = rim
             applyRimStyle()
+        }
+        if edge != self.edge {
+            applyEdgeStyle(edge)
         }
         applyGradientStyleIfNeeded()
         CATransaction.commit()
@@ -338,8 +349,34 @@ final class NotchLayerSurfaceView: NSView {
         }
     }
 
+    /// Solid band this many points deep, hugging the outline's lower edge.
+    static let edgeThickness: CGFloat = 3
+
+    private func applyEdgeStyle(_ edge: NSColor?) {
+        let wasShowing = self.edge != nil
+        self.edge = edge
+        appliedOutlineKey = nil
+        if let edge { edgeLayer.fillColor = edge.cgColor }
+        edgeLayer.isHidden = edge == nil
+        guard edge != nil, !wasShowing else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = 0.18
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        edgeLayer.add(fade, forKey: "edge.fade")
+    }
+
+    /// The part of the outline pushed down by `edgeThickness` that sticks out below it, in top-down coordinates.
+    private static func edgePath(below topDownPath: CGPath) -> CGPath {
+        var shift = CGAffineTransform(translationX: 0, y: edgeThickness)
+        guard let shifted = topDownPath.copy(using: &shift) else { return CGMutablePath() }
+        return shifted.subtracting(topDownPath)
+    }
+
     private func applyGradientStyleIfNeeded() {
         if shapeLayer.frame != bounds { shapeLayer.frame = bounds }
+        if edgeLayer.frame != bounds { edgeLayer.frame = bounds }
         if rimLayer.frame != bounds { rimLayer.frame = bounds }
         guard let fill, fill.isGradient else { return }
         let topDown = isTopDown
@@ -377,6 +414,22 @@ final class NotchLayerSurfaceView: NSView {
         }
     }
 
+    /// Drops the outline keyframes of a timeline the engine abandoned, so per-frame renders show.
+    private func cancelOutlineTimeline() {
+        func strip(_ layer: CALayer) {
+            for key in layer.animationKeys() ?? [] where key.hasPrefix("morph.") {
+                layer.removeAnimation(forKey: key)
+            }
+            if let mask = layer.mask { strip(mask) }
+            for sublayer in layer.sublayers ?? [] { strip(sublayer) }
+        }
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        strip(layer)
+        CATransaction.commit()
+    }
+
     private func animateOutline(_ timeline: NotchMorphTimeline) {
         guard let style = shape, timeline.frames.count > 1 else { return }
         let topDown = isTopDown
@@ -391,6 +444,8 @@ final class NotchLayerSurfaceView: NSView {
         var endPoints: [Any] = []
         var rimStartPoints: [Any] = []
         var rimEndPoints: [Any] = []
+        var edgePaths: [Any] = []
+        let showsEdge = edge != nil
         paths.reserveCapacity(timeline.frames.count)
 
         for frame in timeline.frames {
@@ -402,6 +457,14 @@ final class NotchLayerSurfaceView: NSView {
                 path = topDownPath.copy(using: &flip)
             }
             paths.append(path ?? empty)
+            if showsEdge {
+                var edgePath = topDownPath.map(Self.edgePath(below:))
+                if !topDown, let topDownEdge = edgePath {
+                    var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: canvasHeight)
+                    edgePath = topDownEdge.copy(using: &flip)
+                }
+                edgePaths.append(edgePath ?? empty)
+            }
             guard gradient else { continue }
             let canvas = GradientCanvas(outline: rect, path: topDownPath, topDown: topDown)
             let layerRect = NotchMorphGeometry.layerRect(canvas.frame, canvasHeight: canvasHeight, topDown: topDown)
@@ -429,6 +492,10 @@ final class NotchLayerSurfaceView: NSView {
         }
         if rim != nil, !showsLitRim {
             rimLayer.add(timeline.animation("path", values: paths, on: rimLayer, discrete: discrete), forKey: "morph.path")
+        }
+        if showsEdge {
+            let edgeDiscrete = discrete || !NotchMorphGeometry.pathsInterpolate(edgePaths)
+            edgeLayer.add(timeline.animation("path", values: edgePaths, on: edgeLayer, discrete: edgeDiscrete), forKey: "morph.path")
         }
         if gradient {
             gradientLayer.add(timeline.animation("bounds", values: localBounds, on: gradientLayer), forKey: "morph.bounds")
@@ -471,6 +538,7 @@ final class NotchLayerSurfaceView: NSView {
             gradient: gradient,
             glowCount: glowLayers.count,
             rim: rim != nil,
+            edge: edge != nil,
             windowOrigin: frame.isMoving ? nil : window.map { _ in convert(CGPoint.zero, to: nil) }
         )
         guard key != appliedOutlineKey else { return }
@@ -493,6 +561,14 @@ final class NotchLayerSurfaceView: NSView {
             glow.shadowPath = path
         }
         if rim != nil, !showsLitRim { rimLayer.path = path }
+        if edge != nil {
+            var edgePath = topDownPath.map(Self.edgePath(below:))
+            if !topDown, let topDownEdge = edgePath {
+                var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: bounds.height)
+                edgePath = topDownEdge.copy(using: &flip)
+            }
+            edgeLayer.path = edgePath
+        }
         if gradient {
             let canvas = GradientCanvas(outline: rect, path: topDownPath, topDown: topDown)
             let layerRect = NotchMorphGeometry.layerRect(canvas.frame, canvasHeight: bounds.height, topDown: topDown)

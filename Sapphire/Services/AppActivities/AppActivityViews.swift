@@ -72,11 +72,12 @@ enum AppActivityLiveActivityView {
             if activity.states[.share] == true {
                 Image(systemName: "rectangle.on.rectangle").font(.system(size: 11, weight: .semibold)).foregroundStyle(.green)
             }
-            Text(activity.startedAt, style: .timer)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(activity.app.kind == .recording ? Color.red : Color.green)
-                .fixedSize()
+            LayerTimerText(
+                date: activity.startedAt,
+                font: .roundedDigits(ofSize: 13, weight: .semibold),
+                color: activity.app.kind == .recording ? .systemRed : .systemGreen
+            )
+            .textBaseline()
             if additionalCount > 0 {
                 Text("+\(additionalCount)")
                     .font(.system(size: 10, weight: .bold))
@@ -127,11 +128,12 @@ private struct AppActivityCard: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Text(activity.startedAt, style: .timer)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(activity.app.kind == .recording ? Color.red : Color.green)
-                    .fixedSize()
+                LayerTimerText(
+                    date: activity.startedAt,
+                    font: .roundedDigits(ofSize: 20, weight: .semibold),
+                    color: activity.app.kind == .recording ? .systemRed : .systemGreen
+                )
+                .textBaseline()
             }
             HStack(spacing: 10) {
                 ForEach(activity.controls) { control in
