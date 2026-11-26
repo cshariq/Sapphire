@@ -625,6 +625,15 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertEqual(try migrated(["hideLiveActivityInFullScreen": false]), .showAll)
     }
 
+    func testSettingsWithoutXDRGradientKeepTheDefaultGradient() throws {
+        var dictionary = try XCTUnwrap(SettingsPersistence.encodeToDictionary(Settings()))
+        dictionary.removeValue(forKey: "xdrHudGradientStart")
+        dictionary.removeValue(forKey: "xdrHudGradientEnd")
+        let decoded = try XCTUnwrap(SettingsPersistence.decodeFromDictionary(dictionary))
+        XCTAssertEqual(decoded.xdrHudGradientStart.cgColor.components, Settings().xdrHudGradientStart.cgColor.components)
+        XCTAssertEqual(decoded.xdrHudGradientEnd.cgColor.components, Settings().xdrHudGradientEnd.cgColor.components)
+    }
+
     @MainActor
     func testDynamicFocusWindowMouseEventHandlingIsDirect() {
         let window = makeDynamicFocusWindow(displayID: 101)
