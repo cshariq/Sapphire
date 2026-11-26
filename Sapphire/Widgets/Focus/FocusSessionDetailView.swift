@@ -20,8 +20,6 @@ struct FocusSessionDetailView: View {
 
     private var isCustomDuration: Bool { !presets.contains(customMinutes) }
 
-    // MARK: - Muted Focus Palettes (Calm, non-stimulating tones)
-
     private var accent: Color {
         focusManager.isFocusBlock
             ? Color(red: 0.38, green: 0.85, blue: 0.65)
@@ -43,7 +41,7 @@ struct FocusSessionDetailView: View {
         .animation(.smooth(duration: 0.35), value: focusManager.phase)
     }
 
-    // MARK: - Left Stage: Pure Focus (65% width)
+    // MARK: - Timer
 
     private var heroFocusStage: some View {
         VStack(spacing: 10) {
@@ -62,7 +60,7 @@ struct FocusSessionDetailView: View {
                     .tracking(1.2)
                     .foregroundColor(accent.opacity(0.8))
             } else {
-                Text("ETA \(Date().addingTimeInterval(customMinutes * 60).formatted(date: .omitted, time: .shortened))")
+                Text("ENDS \(Date().addingTimeInterval(customMinutes * 60).formatted(date: .omitted, time: .shortened))")
                     .font(.system(size: 9, weight: .bold))
                     .tracking(1.2)
                     .foregroundColor(.white.opacity(0.35))
@@ -141,7 +139,7 @@ struct FocusSessionDetailView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 11, weight: .bold))
-                        Text("Begin Focus")
+                        Text("Start Focus")
                             .font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundColor(Color(red: 0.05, green: 0.07, blue: 0.06))
@@ -174,7 +172,7 @@ struct FocusSessionDetailView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: "clock.arrow.circlepath")
                                     .font(.system(size: 11, weight: .semibold))
-                                Text("+5m Postpone")
+                                Text("+5 min")
                                     .font(.system(size: 12, weight: .semibold))
                             }
                             .foregroundColor(.white.opacity(0.9))
@@ -183,7 +181,7 @@ struct FocusSessionDetailView: View {
                             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        .help("Postpone the break by 5 minutes and keep focusing")
+                        .help("Postpone the break by 5 minutes")
                     } else {
                         Button {
                             focusManager.skipBlock()
@@ -223,7 +221,7 @@ struct FocusSessionDetailView: View {
         case .focusing:
             return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Block \(String(focusManager.currentBlockIndex + 1))")
         case .onBreak:
-            return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Rest & recharge")
+            return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Break")
         }
     }
 
@@ -255,11 +253,10 @@ struct FocusSessionDetailView: View {
         }
     }
 
-    // MARK: - Right Rail: Companion panel
+    // MARK: - Side panel
 
     private var companionPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            railHeader
             statsStrip
             streakIndicator
             ambientMiniPlayer
@@ -275,25 +272,13 @@ struct FocusSessionDetailView: View {
         }
     }
 
-    private var railHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("SESSION CONTROL")
-                .font(.system(size: 9, weight: .bold))
-                .tracking(1.4)
-                .foregroundColor(accent)
-            Text("Stay in the zone")
-                .font(.system(size: 21, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
-        }
-    }
-
     private var statsStrip: some View {
         HStack(spacing: 8) {
             statItem(label: String(localized: "Focused"), value: FocusSessionManager.format(focusManager.completedToday))
             Divider().frame(height: 20).opacity(0.15)
             statItem(label: String(localized: "Blocks"), value: "\(focusManager.blocksCompletedThisSession)")
             Divider().frame(height: 20).opacity(0.15)
-            statItem(label: String(localized: "Total"), value: "\(focusManager.history.count)")
+            statItem(label: String(localized: "Sessions"), value: "\(focusManager.history.count)")
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 2)
@@ -319,20 +304,9 @@ struct FocusSessionDetailView: View {
 
     private var ambientMiniPlayer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("Ambiance", systemImage: "waveform")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.6))
-
-                Spacer()
-
-                if ambient.isPlaying {
-                    Text("PLAYING")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(accent)
-                        .tracking(1)
-                }
-            }
+            Text("Ambient Sound")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.white.opacity(0.6))
 
             HStack(spacing: 8) {
                 Button {
@@ -398,35 +372,24 @@ struct FocusSessionDetailView: View {
 
     private var environmentQuickToggles: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Environment Control")
-                Spacer()
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.35))
-            }
+            Text("Environment")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.white.opacity(0.6))
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+            VStack(spacing: 6) {
                 quickToggleChip(
-                    title: String(localized: "Dim Apps"),
+                    title: String(localized: "Dim Inactive Apps"),
                     icon: "moon.fill",
                     isOn: $settings.settings.focusDimInactiveApps
                 )
                 quickToggleChip(
-                    title: String(localized: "Mission Ctl"),
-                    icon: "rectangle.inset.filled",
-                    isOn: $settings.settings.focusDisableDimInMissionControl
-                )
-                quickToggleChip(
-                    title: String(localized: "Hide Wall"),
+                    title: String(localized: "Hide Wallpaper"),
                     icon: "photo.fill",
                     isOn: $settings.settings.focusHideWallpaper
                 )
                 quickToggleChip(
-                    title: String(localized: "App Limit"),
-                    icon: "shield.fill",
+                    title: String(localized: "Limit Visible Apps"),
+                    icon: "square.stack.3d.up.fill",
                     isOn: $settings.settings.focusAppLimitEnabled
                 )
             }
@@ -461,7 +424,7 @@ struct FocusSessionDetailView: View {
                     .frame(width: 4, height: 4)
             }
             .padding(.horizontal, 8)
-            .frame(height: 28)
+            .frame(height: 26)
             .background(
                 isOn.wrappedValue ? accent.opacity(0.08) : Color.white.opacity(0.03),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -473,8 +436,8 @@ struct FocusSessionDetailView: View {
         }
         .buttonStyle(.plain)
     }
-
 }
+
 @MainActor
 private struct FocusSessionTimerRing: View {
     @ObservedObject var focusManager: FocusSessionManager
@@ -493,8 +456,6 @@ private struct FocusSessionTimerRing: View {
                 lineWidth: 9,
                 trackColor: Color.white.opacity(0.05),
                 colors: [accent],
-                shadowColor: accent.opacity(0.4),
-                shadowRadius: 12,
                 catchUpDuration: 0.2
             )
 
@@ -523,11 +484,6 @@ private struct FocusSessionTimerRing: View {
                     .foregroundColor(accent.opacity(0.8))
                     .contentTransition(.numericText())
                     .animation(.smooth(duration: 0.2), value: Int(progress * 100))
-            } else {
-                Text("TAP START TO BEGIN")
-                    .font(.system(size: 9, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundColor(.white.opacity(0.35))
             }
         }
     }

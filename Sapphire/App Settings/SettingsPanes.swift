@@ -12673,7 +12673,6 @@ struct FocusSessionSettingsView: View {
     @StateObject private var ambient = FocusAmbientSoundManager.shared
     @StateObject private var shortcutsCatalog = ShortcutsCatalog.shared
     @StateObject private var profileStore = FocusProfileStore.shared
-    @State private var newBlockedApp: String = ""
     @State private var newBlockedSite: String = ""
     @State private var showingAddSchedule = false
     @State private var appCandidates: [AppCandidate] = []
@@ -12691,20 +12690,19 @@ struct FocusSessionSettingsView: View {
                     .padding(.bottom)
 
                 FocusInsightsPanel(manager: FocusSessionManager.shared)
-                    .environmentObject(FocusSessionManager.shared)
 
                 profilesSection
-                durationSection
+                sessionSection
                 blockingSection
                 socialSection
                 triggersSection
                 schedulingSection
-                liveActivityToggleSection
                 environmentSection
-                automationSection
+                notchSection
+                shortcutsSection
             }
             .padding(25)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .task {
             guard appCandidates.isEmpty else { return }
@@ -12718,211 +12716,320 @@ struct FocusSessionSettingsView: View {
         }
     }
 
-    private var profilesSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Profiles"))
-            Text("Each profile has its own timer, blocks, and social filters. Sync activation and settings separately.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
+    // MARK: Profiles
 
+    private var profilesSection: some View {
+        SettingsCard(title: "Profiles", description: "Each profile has its own timer, blocking and social filters.") {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     ForEach(profileStore.profiles) { profile in
-                        Button {
-                            profileStore.select(profile.id)
-                        } label: {
-                            VStack(spacing: 6) {
-                                Image(systemName: profile.symbolName)
-                                    .font(.system(size: 18, weight: .semibold))
-                                Text(profile.name)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .lineLimit(1)
-                            }
-                            .frame(width: 88, height: 72)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(profile.id == profileStore.activeProfileID
-                                          ? profile.accentColor.opacity(0.28)
-                                          : Color.primary.opacity(0.06))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .strokeBorder(profile.id == profileStore.activeProfileID
-                                                  ? profile.accentColor.opacity(0.8)
-                                                  : Color.clear, lineWidth: 1.5)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("Duplicate") {
-                                var copy = profile
-                                copy.id = UUID()
-                                copy.name = profile.name + " Copy"
-                                profileStore.upsert(copy)
-                            }
-                            if profileStore.profiles.count > 1 {
-                                Button("Delete", role: .destructive) {
-                                    profileStore.delete(id: profile.id)
-                                }
-                            }
-                        }
+                        profileTile(profile)
                     }
                     Button {
-                        let p = FocusProfile.makeDefault(name: "New Profile", symbol: "sparkles")
-                        profileStore.upsert(p)
-                        profileStore.select(p.id)
+                        let profile = FocusProfile.makeDefault(name: String(localized: "New Profile"))
+                        profileStore.upsert(profile)
+                        profileStore.select(profile.id)
                     } label: {
                         Image(systemName: "plus")
-                            .frame(width: 44, height: 72)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.06)))
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 64)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .help("New Profile")
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal)
                 .padding(.vertical, 10)
             }
 
-            Divider().opacity(0.3).padding(.horizontal, 16)
-
+            Divider().padding(.leading, 20)
             HStack {
                 Text("Name")
-                    .font(.system(size: 13))
                 Spacer()
                 TextField("Name", text: Binding(
                     get: { profileStore.activeProfile.name },
                     set: { name in profileStore.updateActive { $0.name = name } }
                 ))
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 160)
+                .frame(width: 180)
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding()
 
-            Divider().opacity(0.3).padding(.horizontal, 16)
+            Divider().padding(.leading, 20)
             ToggleRow(
-                title: "Sync start & stop with phone",
-                description: "When this profile starts or ends here, do the same on Android.",
+                title: "Sync Start and Stop With Phone",
+                description: "Starting or ending this profile here does the same on your Android phone.",
                 isOn: Binding(
                     get: { profileStore.activeProfile.syncActivation },
                     set: { v in profileStore.updateActive { $0.syncActivation = v } }
                 )
             )
-            Divider().opacity(0.3).padding(.horizontal, 16)
+            Divider().padding(.leading, 20)
             ToggleRow(
-                title: "Sync this profile’s settings",
-                description: "Mirror blocks and social filters. Off = customize each device.",
+                title: "Sync Blocking With Phone",
+                description: "Use this profile's blocking and social filters on your phone too. Turn off to set them separately on each device.",
                 isOn: Binding(
                     get: { profileStore.activeProfile.syncSettings },
                     set: { v in profileStore.updateActive { $0.syncSettings = v } }
                 )
             )
-            Divider().opacity(0.3).padding(.horizontal, 16)
+            Divider().padding(.leading, 20)
             ToggleRow(
-                title: "Also sync system Focus / DND",
+                title: "Sync System Focus",
                 description: "Mirror macOS Focus and Android Do Not Disturb.",
                 isOn: $settings.settings.continuitySyncNotificationMode
             )
         }
-        .modifier(SettingsContainerModifier())
     }
 
-    private var socialSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Social filters"))
-            Text("Cut short-form feeds without blocking every app by default.")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 4)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
-                socialChip("Instagram Reels", \.blockInstagramReels)
-                socialChip("Instagram Explore", \.blockInstagramExplore)
-                socialChip("Following only", \.instagramFollowingOnly)
-                socialChip("YouTube Shorts", \.blockYouTubeShorts)
-                socialChip("Facebook Reels", \.blockFacebookReels)
-                socialChip("TikTok", \.blockTikTok)
-                socialChip("Snap Spotlight", \.blockSnapchatSpotlight)
-                socialChip("Short-form web", \.blockShortFormWeb)
-            }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
-        }
-        .modifier(SettingsContainerModifier())
-    }
-
-    private func socialChip(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
-        let on = profileStore.activeProfile.social[keyPath: keyPath]
+    private func profileTile(_ profile: FocusProfile) -> some View {
+        let isActive = profile.id == profileStore.activeProfileID
         return Button {
-            profileStore.updateActive { $0.social[keyPath: keyPath].toggle() }
+            profileStore.select(profile.id)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(on ? Color.purple : Color.secondary)
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
+            VStack(spacing: 6) {
+                Image(systemName: profile.symbolName)
+                    .font(.system(size: 16, weight: .medium))
+                Text(profile.name)
+                    .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .foregroundStyle(isActive ? Color.primary : Color.secondary)
+            .frame(width: 88, height: 64)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(on ? Color.purple.opacity(0.12) : Color.primary.opacity(0.04))
+                isActive ? profile.accentColor.opacity(0.22) : Color.white.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
-            .padding(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(isActive ? profile.accentColor.opacity(0.7) : Color.clear, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button("Duplicate") {
+                var copy = profile
+                copy.id = UUID()
+                copy.name = profile.name + " Copy"
+                profileStore.upsert(copy)
+            }
+            if profileStore.profiles.count > 1 {
+                Button("Delete", role: .destructive) {
+                    profileStore.delete(id: profile.id)
+                }
+            }
+        }
+    }
+
+    // MARK: Session
+
+    private var sessionSection: some View {
+        SettingsCard(title: "Session") {
+            minutesRow("Focus Duration", value: $settings.settings.focusSessionDuration, minimum: 1)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Enable Breaks", description: "Start a break after each focus block.", isOn: $settings.settings.focusBreakEnabled)
+            if settings.settings.focusBreakEnabled {
+                Divider().padding(.leading, 20)
+                minutesRow("Break Duration", value: $settings.settings.focusBreakDuration, minimum: 0)
+            }
+        }
+    }
+
+    private func minutesRow(_ title: LocalizedStringKey, value: Binding<TimeInterval>, minimum: Double) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField("Minutes", value: Binding(
+                get: { value.wrappedValue / 60 },
+                set: { value.wrappedValue = max(minimum, $0) * 60 }
+            ), format: .number.precision(.fractionLength(0)))
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 60)
+            Text("min")
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+    }
+
+    // MARK: Blocking
+
+    private var blockingSection: some View {
+        SettingsCard(title: "Blocking") {
+            ToggleRow(title: "Enable Blocking", description: "Block distracting apps and websites during focus sessions.", isOn: $settings.settings.focusBlockingEnabled)
+            if settings.settings.focusBlockingEnabled {
+                Divider().padding(.leading, 20)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Mode")
+                        Spacer()
+                        Picker("", selection: $settings.settings.focusBlockingMode) {
+                            ForEach(FocusBlockingMode.allCases) { mode in
+                                Text(verbatim: mode.displayName).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 220)
+                    }
+                    Text(verbatim: settings.settings.focusBlockingMode.blurb)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding()
+
+                Divider().padding(.leading, 20)
+                intensityRow
+
+                Divider().padding(.leading, 20)
+                if settings.settings.focusBlockingMode == .allowlist {
+                    appList("Allowed Apps", apps: $settings.settings.focusAllowedApps)
+                } else {
+                    ToggleRow(title: "Block During Breaks", description: "Keep blocking active while on break.", isOn: $settings.settings.focusBlockingDuringBreaks)
+                    Divider().padding(.leading, 20)
+                    appList("Blocked Apps", apps: $settings.settings.focusBlockedApps)
+                    Divider().padding(.leading, 20)
+                    websiteList
+                }
+            }
+        }
+    }
+
+    private var intensityRow: some View {
+        let isLocked = FocusSessionManager.shared.isSessionActive
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Intensity")
+                Spacer()
+                Picker("", selection: $settings.settings.focusIntensity) {
+                    ForEach(FocusIntensity.allCases) { level in
+                        Text(verbatim: level.displayName).tag(level)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 150)
+                .disabled(isLocked)
+            }
+            Text(verbatim: settings.settings.focusIntensity.blurb)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if isLocked {
+                Label("Can't be changed while a session is running.", systemImage: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding()
+    }
+
+    private func appList(_ title: LocalizedStringKey, apps: Binding<Set<String>>) -> some View {
+        let names = Dictionary(appCandidates.map { ($0.bundleID, $0.name) }, uniquingKeysWith: { first, _ in first })
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                Spacer()
+                Menu("Add App") {
+                    ForEach(appCandidates.filter { !apps.wrappedValue.contains($0.bundleID) }) { candidate in
+                        Button(candidate.name) { apps.wrappedValue.insert(candidate.bundleID) }
+                    }
+                }
+                .fixedSize()
+            }
+            if !apps.wrappedValue.isEmpty {
+                chipGrid(apps.wrappedValue.map { (id: $0, label: names[$0] ?? $0) }) { apps.wrappedValue.remove($0) }
+            }
+        }
+        .padding()
+    }
+
+    private var websiteList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Blocked Websites")
+                Spacer()
+                TextField("example.com", text: $newBlockedSite)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 180)
+                    .onSubmit(addBlockedSite)
+                Button("Add", action: addBlockedSite)
+                    .disabled(newBlockedSite.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if !settings.settings.focusBlockedWebsites.isEmpty {
+                chipGrid(settings.settings.focusBlockedWebsites.map { (id: $0, label: $0) }) {
+                    settings.settings.focusBlockedWebsites.remove($0)
+                }
+            }
+        }
+        .padding()
+    }
+
+    private func addBlockedSite() {
+        let trimmed = newBlockedSite
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+            .replacingOccurrences(of: "www.", with: "")
+        guard !trimmed.isEmpty else { return }
+        settings.settings.focusBlockedWebsites.insert(trimmed)
+        newBlockedSite = ""
+    }
+
+    private func chipGrid(_ items: [(id: String, label: String)], onRemove: @escaping (String) -> Void) -> some View {
+        let sorted = items.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)], alignment: .leading, spacing: 6) {
+            ForEach(sorted, id: \.id) { item in
+                chipView(item.label) { onRemove(item.id) }
+            }
+        }
+    }
+
+    // MARK: Social filters
+
+    private var socialSection: some View {
+        SettingsCard(title: "Social Filters", description: "Hide short-form feeds without blocking the whole app.") {
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 10) {
+                socialToggle("Instagram Reels", \.blockInstagramReels)
+                socialToggle("Instagram Explore", \.blockInstagramExplore)
+                socialToggle("Instagram Following Only", \.instagramFollowingOnly)
+                socialToggle("YouTube Shorts", \.blockYouTubeShorts)
+                socialToggle("Facebook Reels", \.blockFacebookReels)
+                socialToggle("TikTok", \.blockTikTok)
+                socialToggle("Snapchat Spotlight", \.blockSnapchatSpotlight)
+                socialToggle("Short-Form Websites", \.blockShortFormWeb)
+            }
+            .padding()
+        }
     }
 
     private func socialToggle(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
-        socialChip(title, keyPath)
+        Toggle(title, isOn: Binding(
+            get: { profileStore.activeProfile.social[keyPath: keyPath] },
+            set: { on in profileStore.updateActive { $0.social[keyPath: keyPath] = on } }
+        ))
+        .toggleStyle(.checkbox)
     }
 
-    private var triggersSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Auto-Start Triggers"))
-            Text("Start this profile when a macOS Focus mode turns on, or when your phone enters Do Not Disturb.")
-                .font(.caption).foregroundColor(.secondary)
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
+    // MARK: Triggers & schedules
 
+    private var triggersSection: some View {
+        SettingsCard(title: "Start Automatically", description: "Start this profile when a macOS Focus turns on or your phone enters Do Not Disturb.") {
             if availableFocusModes.isEmpty {
-                Text("No macOS Focus modes found. Enable Focus Status permission and create modes in System Settings.")
-                    .font(.caption).foregroundColor(.secondary)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
+                Text("No Focus modes found. Allow Focus Status access and set up Focus modes in System Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding()
+                Divider().padding(.leading, 20)
             } else {
                 ForEach(availableFocusModes, id: \.id) { mode in
-                    let selected = profileStore.activeProfile.triggers.macOSFocusModeIDs.contains(mode.id)
-                    ToggleRow(
-                        title: Text(verbatim: mode.name),
-                        description: Text("Start this profile when “\(mode.name)” activates"),
-                        isOn: Binding(
-                            get: { selected },
-                            set: { on in
-                                profileStore.updateActive { p in
-                                    if on {
-                                        if !p.triggers.macOSFocusModeIDs.contains(mode.id) {
-                                            p.triggers.macOSFocusModeIDs.append(mode.id)
-                                        }
-                                        if !p.triggers.macOSFocusModeNames.contains(mode.name) {
-                                            p.triggers.macOSFocusModeNames.append(mode.name)
-                                        }
-                                    } else {
-                                        p.triggers.macOSFocusModeIDs.removeAll { $0 == mode.id }
-                                        p.triggers.macOSFocusModeNames.removeAll { $0 == mode.name }
-                                    }
-                                }
-                            }
-                        )
-                    )
-                    Divider().opacity(0.3).padding(.horizontal, 16)
+                    ToggleRow(title: Text(verbatim: mode.name), isOn: focusModeBinding(mode))
+                    Divider().padding(.leading, 20)
                 }
             }
-
             ToggleRow(
                 title: "Android Do Not Disturb",
-                description: "Start when the phone enters DND (requires Continuity).",
+                description: "Requires Continuity.",
                 isOn: Binding(
                     get: { profileStore.activeProfile.triggers.androidDND || profileStore.activeProfile.triggers.syncPeerSystemFocus },
                     set: { v in
@@ -12934,385 +13041,106 @@ struct FocusSessionSettingsView: View {
                 )
             )
         }
-        .modifier(SettingsContainerModifier())
+    }
+
+    private func focusModeBinding(_ mode: (id: String, name: String)) -> Binding<Bool> {
+        Binding(
+            get: { profileStore.activeProfile.triggers.macOSFocusModeIDs.contains(mode.id) },
+            set: { on in
+                profileStore.updateActive { p in
+                    if on {
+                        if !p.triggers.macOSFocusModeIDs.contains(mode.id) {
+                            p.triggers.macOSFocusModeIDs.append(mode.id)
+                        }
+                        if !p.triggers.macOSFocusModeNames.contains(mode.name) {
+                            p.triggers.macOSFocusModeNames.append(mode.name)
+                        }
+                    } else {
+                        p.triggers.macOSFocusModeIDs.removeAll { $0 == mode.id }
+                        p.triggers.macOSFocusModeNames.removeAll { $0 == mode.name }
+                    }
+                }
+            }
+        )
     }
 
     private var schedulingSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Scheduling"))
-            Text("Auto-start a focus session at a set time of day — daily, on specific days of the week, weekly, monthly, or once.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-
-            if settings.settings.scheduledFocusSessions.isEmpty {
-                Text("No scheduled sessions.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-            } else {
-                ForEach($settings.settings.scheduledFocusSessions) { $schedule in
-                    FocusScheduleRowView(schedule: $schedule)
-                    Divider().opacity(0.3).padding(.horizontal, 16)
+        SettingsCard(title: "Schedules", description: "Start a focus session automatically at a set time.") {
+            ForEach($settings.settings.scheduledFocusSessions) { $schedule in
+                FocusScheduleRowView(schedule: $schedule)
+                Divider().padding(.leading, 20)
+            }
+            HStack {
+                if settings.settings.scheduledFocusSessions.isEmpty {
+                    Text("No schedules yet.")
+                        .foregroundStyle(.secondary)
                 }
+                Spacer()
+                Button("Add Schedule") { showingAddSchedule = true }
             }
-
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            Button {
-                showingAddSchedule = true
-            } label: {
-                Label("Add Schedule", systemImage: "plus.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.green)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding()
         }
-        .modifier(SettingsContainerModifier())
         .sheet(isPresented: $showingAddSchedule) {
             AddFocusScheduleView().environment(settings)
         }
     }
 
-    private var liveActivityToggleSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Widget & Activity"))
-            ToggleRow(
-                title: "Show in Notch",
-                description: "Display the focus session as a live activity in the notch while it's running.",
-                isOn: $settings.settings.focusSessionLiveActivityEnabled
-            )
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            ToggleRow(
-                title: "Show Time Instead of Ring",
-                description: "Show the remaining time on the right side instead of the completing progress ring.",
-                isOn: $settings.settings.focusSessionLiveActivityShowTime
-            )
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            ToggleRow(
-                title: "Break & Session Notifications",
-                description: "Get a notification when a focus block ends and a break starts, when a break ends, and when the session finishes.",
-                isOn: $settings.settings.focusNotificationsEnabled
-            )
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            ToggleRow(
-                title: "Click to Show Detail View",
-                description: "Clicking the focus session activity opens the full detail view.",
-                isOn: $settings.settings.clickToShowFocusSessionView
-            )
-        }
-        .modifier(SettingsContainerModifier())
-    }
-
-    private var durationSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Session Timing"))
-            HStack {
-                Text("Focus Duration:")
-                    .font(.system(size: 13))
-                Spacer()
-                TextField("Minutes", value: Binding(
-                    get: { settings.settings.focusSessionDuration / 60 },
-                    set: { settings.settings.focusSessionDuration = max(1, $0) * 60 }
-                ), format: .number.precision(.fractionLength(0)))
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1)
-                    .frame(width: 62)
-                    .multilineTextAlignment(.trailing)
-                    .help("No limit — enter any number of minutes")
-                Text("min")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-
-            Divider().opacity(0.3).padding(.horizontal, 16)
-
-            ToggleRow(title: "Enable Breaks", description: "Automatically start a break after each focus block.", isOn: $settings.settings.focusBreakEnabled)
-            if settings.settings.focusBreakEnabled {
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                HStack {
-                    Text("Break Duration:")
-                        .font(.system(size: 13))
-                    Spacer()
-                    TextField("Minutes", value: Binding(
-                        get: { settings.settings.focusBreakDuration / 60 },
-                        set: { settings.settings.focusBreakDuration = max(0, $0) * 60 }
-                    ), format: .number.precision(.fractionLength(0)))
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(1)
-                        .frame(width: 62)
-                        .multilineTextAlignment(.trailing)
-                        .help("No limit — enter any number of minutes (0 disables the break)")
-                    Text("min")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-            }
-        }
-        .modifier(SettingsContainerModifier())
-    }
-
-    private var blockingSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "App & Website Blocking"))
-            ToggleRow(title: "Enable Blocking", description: "Block distracting apps and websites during focus sessions.", isOn: $settings.settings.focusBlockingEnabled)
-            if settings.settings.focusBlockingEnabled {
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                Picker("Blocking mode", selection: $settings.settings.focusBlockingMode) {
-                    ForEach(FocusBlockingMode.allCases) { mode in
-                        Text(verbatim: mode.displayName).tag(mode)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                Text(verbatim: settings.settings.focusBlockingMode.blurb)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 16).padding(.bottom, 8)
-
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                HStack(spacing: 8) {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
-                    Text("Blocking Intensity")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 6)
-                Text("How aggressively blocked apps (and websites) are handled during a session.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                if FocusSessionManager.shared.isSessionActive {
-                    Label("Intensity can't be changed while a session is running", systemImage: "lock.fill")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 6)
-                }
-
-                ForEach(FocusIntensity.allCases) { level in
-                    Button {
-                        guard !FocusSessionManager.shared.isSessionActive else { return }
-                        settings.settings.focusIntensity = level
-                    } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: level.systemImage)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(settings.settings.focusIntensity == level ? .green : .secondary)
-                                .frame(width: 22)
-                                .padding(.top, 2)
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(verbatim: level.displayName)
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundColor(.primary)
-                                    if settings.settings.focusIntensity == level {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.green)
-                                    }
-                                }
-                                Text(verbatim: level.blurb)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .fill(settings.settings.focusIntensity == level ? Color.green.opacity(0.12) : Color.white.opacity(0.05))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-                    .opacity(FocusSessionManager.shared.isSessionActive ? 0.45 : 1.0)
-                }
-                .padding(.bottom, 6)
-
-                Divider().opacity(0.3).padding(.horizontal, 16)
-
-                if settings.settings.focusBlockingMode == .allowlist {
-                    Divider().opacity(0.3).padding(.horizontal, 16)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Allowed Apps")
-                            .font(.caption.bold()).padding(.horizontal, 16).padding(.top, 10)
-                        Picker("Add app", selection: $newBlockedApp) {
-                            Text("Select an app…").tag("")
-                            ForEach(appCandidates, id: \.bundleID) { candidate in
-                                Text(verbatim: candidate.name).tag(candidate.bundleID)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        HStack {
-                            Spacer()
-                            Button("Add") {
-                                guard !newBlockedApp.isEmpty else { return }
-                                settings.settings.focusAllowedApps.insert(newBlockedApp)
-                                newBlockedApp = ""
-                            }
-                            .disabled(newBlockedApp.isEmpty)
-                            .padding(.trailing, 16)
-                        }
-                        if !settings.settings.focusAllowedApps.isEmpty {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], alignment: .leading, spacing: 4) {
-                                ForEach(Array(settings.settings.focusAllowedApps), id: \.self) { bundleID in
-                                    let name = appCandidates.first(where: { $0.bundleID == bundleID })?.name ?? bundleID
-                                    chipView(name) { settings.settings.focusAllowedApps.remove(bundleID) }
-                                }
-                            }
-                            .padding(.horizontal, 16).padding(.bottom, 8)
-                        }
-                    }
-                } else {
-                    Divider().opacity(0.3).padding(.horizontal, 16)
-                    ToggleRow(title: "Block During Breaks", description: "Keep blocking active while on break.", isOn: $settings.settings.focusBlockingDuringBreaks)
-
-                    Divider().opacity(0.3).padding(.horizontal, 16)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Blocked Apps")
-                            .font(.caption.bold()).padding(.horizontal, 16).padding(.top, 10)
-                    Picker("Add app", selection: $newBlockedApp) {
-                        Text("Select an app…").tag("")
-                        ForEach(appCandidates, id: \.bundleID) { candidate in
-                            Text(verbatim: candidate.name).tag(candidate.bundleID)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    HStack {
-                        Spacer()
-                        Button("Add") {
-                            guard !newBlockedApp.isEmpty else { return }
-                            settings.settings.focusBlockedApps.insert(newBlockedApp)
-                            newBlockedApp = ""
-                        }
-                        .disabled(newBlockedApp.isEmpty)
-                        .padding(.trailing, 16)
-                    }
-                    if !settings.settings.focusBlockedApps.isEmpty {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], alignment: .leading, spacing: 4) {
-                            ForEach(Array(settings.settings.focusBlockedApps), id: \.self) { bundleID in
-                                let name = appCandidates.first(where: { $0.bundleID == bundleID })?.name ?? bundleID
-                                chipView(name) { settings.settings.focusBlockedApps.remove(bundleID) }
-                            }
-                        }
-                        .padding(.horizontal, 16).padding(.bottom, 8)
-                    }
-
-                    Divider().opacity(0.3).padding(.horizontal, 16)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Blocked Websites")
-                            .font(.caption.bold()).padding(.horizontal, 16).padding(.top, 10)
-                        HStack {
-                            TextField("e.g. twitter.com", text: $newBlockedSite)
-                                .textFieldStyle(.roundedBorder)
-                                .padding(.leading, 16)
-                            Button("Add") {
-                                let trimmed = newBlockedSite
-                                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                                    .replacingOccurrences(of: "https://", with: "")
-                                    .replacingOccurrences(of: "http://", with: "")
-                                    .replacingOccurrences(of: "www.", with: "")
-                                guard !trimmed.isEmpty else { return }
-                                settings.settings.focusBlockedWebsites.insert(trimmed)
-                                newBlockedSite = ""
-                            }
-                            .disabled(newBlockedSite.trimmingCharacters(in: .whitespaces).isEmpty)
-                            .padding(.trailing, 16)
-                        }
-                        if !settings.settings.focusBlockedWebsites.isEmpty {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading, spacing: 4) {
-                                ForEach(Array(settings.settings.focusBlockedWebsites), id: \.self) { site in
-                                    chipView(" \(site)") { settings.settings.focusBlockedWebsites.remove(site) }
-                                }
-                            }
-                            .padding(.horizontal, 16).padding(.bottom, 8)
-                        }
-                    }
-                    .padding(.bottom, 8)
-                    }
-                }
-            }
-        }
-        .modifier(SettingsContainerModifier())
-    }
+    // MARK: Environment
 
     private var environmentSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Environment"))
-            Text("Apply environment adjustments to the whole Mac while a session runs.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
-
-            ToggleRow(title: "Dim Inactive Apps", description: "Darken windows you're not using so the active app stands out and visual clutter recedes.", isOn: $settings.settings.focusDimInactiveApps)
+        SettingsCard(title: "Environment", description: "Changes to the whole Mac while a session runs.") {
+            ToggleRow(title: "Dim Inactive Apps", description: "Darken windows you aren't using.", isOn: $settings.settings.focusDimInactiveApps)
             if settings.settings.focusDimInactiveApps {
-                Divider().opacity(0.3).padding(.horizontal, 16)
+                Divider().padding(.leading, 20)
                 HStack {
-                    Text("Dim Intensity:")
-                        .font(.system(size: 13))
+                    Text("Dim Intensity")
                     Spacer()
                     DeferredSlider(value: $settings.settings.focusDimInactiveOpacity, in: 0.2...1.0)
-                        .frame(width: 160)
+                        .frame(width: 180)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                ToggleRow(title: "Pause in Mission Control", description: "Temporarily remove the dim layer while Mission Control is open so you can actually see the apps in the Exposé grid.", isOn: $settings.settings.focusDisableDimInMissionControl)
+                .padding()
+                Divider().padding(.leading, 20)
+                ToggleRow(title: "Pause in Mission Control", description: "Turn the dimming off while Mission Control is open.", isOn: $settings.settings.focusDisableDimInMissionControl)
             }
 
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            ToggleRow(title: "Hide Wallpaper", description: "Cover the desktop wallpaper and icons with black for the duration of the session.", isOn: $settings.settings.focusHideWallpaper)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Hide Wallpaper", description: "Cover the wallpaper and desktop icons with black during a session.", isOn: $settings.settings.focusHideWallpaper)
 
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            ToggleRow(title: "Limit Visible Apps", description: "Keep only a few apps on screen; switching to another tucks the oldest one away (restored when the session ends).", isOn: $settings.settings.focusAppLimitEnabled)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Limit Visible Apps", description: "Keep only a few apps on screen. Opening another hides the oldest; they come back when the session ends.", isOn: $settings.settings.focusAppLimitEnabled)
             if settings.settings.focusAppLimitEnabled {
-                Divider().opacity(0.3).padding(.horizontal, 16)
+                Divider().padding(.leading, 20)
                 HStack {
-                    Text("Max visible apps:")
-                        .font(.system(size: 13))
+                    Text("Maximum Visible Apps")
                     Spacer()
                     Stepper(value: $settings.settings.focusAppLimit, in: 1...6) {
                         Text("\(settings.settings.focusAppLimit)")
-                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .monospacedDigit()
                     }
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
+                .padding()
             }
 
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            ToggleRow(title: "Ambient Sounds", description: "Play generated white/pink/brown noise or rain to mask noisy surroundings. Starts automatically with each session.", isOn: $settings.settings.focusAmbientSoundEnabled)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Ambient Sounds", description: "Play white, pink or brown noise or rain during each session.", isOn: $settings.settings.focusAmbientSoundEnabled)
             if settings.settings.focusAmbientSoundEnabled {
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                Picker("Sound", selection: $settings.settings.focusAmbientSoundType) {
-                    ForEach(FocusAmbientSoundType.allCases) { type in
-                        Label(type.displayName, systemImage: type.systemImage).tag(type)
+                Divider().padding(.leading, 20)
+                HStack {
+                    Text("Sound")
+                    Spacer()
+                    Picker("", selection: $settings.settings.focusAmbientSoundType) {
+                        ForEach(FocusAmbientSoundType.allCases) { type in
+                            Label(type.displayName, systemImage: type.systemImage).tag(type)
+                        }
                     }
+                    .labelsHidden()
+                    .frame(width: 150)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                Divider().opacity(0.3).padding(.horizontal, 16)
+                .padding()
+                Divider().padding(.leading, 20)
                 HStack(spacing: 12) {
-                    Button(action: { ambient.toggle() }) {
-                        Label(ambient.isPlaying ? "Stop" : "Preview", systemImage: ambient.isPlaying ? "stop.fill" : "play.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
                     Text("Volume")
-                        .font(.system(size: 13))
+                    Spacer()
                     DeferredSlider(
                         value: Binding(
                             get: { settings.settings.focusAmbientSoundVolume },
@@ -13324,12 +13152,17 @@ struct FocusSessionSettingsView: View {
                         in: 0...1,
                         onDraftChange: { ambient.volume = $0 }
                     )
-                    .frame(width: 110)
+                    .frame(width: 180)
+                    Button {
+                        ambient.toggle()
+                    } label: {
+                        Image(systemName: ambient.isPlaying ? "stop.fill" : "play.fill")
+                    }
+                    .help(ambient.isPlaying ? String(localized: "Stop") : String(localized: "Preview"))
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
+                .padding()
             }
         }
-        .modifier(SettingsContainerModifier())
         .onChange(of: settings.settings.focusAmbientSoundType) { _, newType in
             if ambient.isPlaying { ambient.setType(newType) }
         }
@@ -13338,107 +13171,111 @@ struct FocusSessionSettingsView: View {
         }
     }
 
-    private var automationSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel(String(localized: "Automation"))
+    // MARK: Notch
 
-            Text("Press this shortcut from anywhere to start or pause a focus session.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
-            Button(action: {
-                if shortcutRecorder.isRecording {
-                    shortcutRecorder.stopRecording()
-                } else {
-                    shortcutRecorder.startRecording { key, flags in
-                        settings.settings.focusStartShortcut = KeyboardShortcut(key: key, modifiers: flags)
-                    }
-                }
-            }) {
-                HStack {
-                    if shortcutRecorder.isRecording {
-                        HStack(spacing: 6) {
-                            ProgressView().scaleEffect(0.7)
-                            Text("Recording... (Esc to cancel)")
-                                .foregroundColor(.accentColor)
-                        }
-                    } else {
-                        Image(systemName: "keyboard")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                        Text("\(KeyboardShortcutHelper.description(for: settings.settings.focusStartShortcut.modifiers)) \(settings.settings.focusStartShortcut.key)")
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 16).padding(.bottom, 12)
-
-            Divider().opacity(0.3).padding(.horizontal, 16)
-
-            HStack(spacing: 8) {
-                Image(systemName: "link.icloud")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 20, height: 20)
-                    .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
-                Text("System Clock & Shortcuts")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 6)
-            Text("Sapphire automatically uses Apple's standard Clock shortcut names (\"Start Timer\", \"Start Stopwatch\", etc.). If iCloud sync is enabled and those Clock shortcuts are present on this Mac, they run automatically during sessions.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16).padding(.top, 2).padding(.bottom, 8)
-            ToggleRow(title: "Sync with System Clock", description: "Mirror focus sessions to the system Clock app via Shortcuts.", isOn: $settings.settings.focusShortcutsEnabled)
-            if settings.settings.focusShortcutsEnabled {
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                Picker("Sync mode", selection: $settings.settings.focusShortcutSyncMode) {
-                    ForEach(FocusShortcutSyncMode.allCases) { mode in
-                        Text(verbatim: mode.displayName).tag(mode)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-            }
-
-            Divider().opacity(0.3).padding(.horizontal, 16)
-            Text("Run a Shortcut when a session starts / ends — e.g. turn on Do Not Disturb.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
-            Picker("On session start", selection: $settings.settings.focusStartShortcutName) {
-                Text("None").tag("")
-                ForEach(shortcutsCatalog.installedNames, id: \.self) { name in
-                    Text(name).tag(name)
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 4)
-            Picker("On session end", selection: $settings.settings.focusEndShortcutName) {
-                Text("None").tag("")
-                ForEach(shortcutsCatalog.installedNames, id: \.self) { name in
-                    Text(name).tag(name)
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 4)
-            .padding(.bottom, 8)
+    private var notchSection: some View {
+        SettingsCard(title: "Notch") {
+            ToggleRow(
+                title: "Show in Notch",
+                description: "Show the running session as a live activity.",
+                isOn: $settings.settings.focusSessionLiveActivityEnabled
+            )
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Show Time Instead of Ring",
+                description: "Show the time left instead of the progress ring.",
+                isOn: $settings.settings.focusSessionLiveActivityShowTime
+            )
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Click to Show Detail View",
+                description: "Open the full session view when you click the activity.",
+                isOn: $settings.settings.clickToShowFocusSessionView
+            )
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Break & Session Notifications",
+                description: "Notify you when a focus block, a break or the session ends.",
+                isOn: $settings.settings.focusNotificationsEnabled
+            )
         }
-        .modifier(SettingsContainerModifier())
+    }
+
+    // MARK: Shortcuts
+
+    private var shortcutsSection: some View {
+        SettingsCard(title: "Shortcuts") {
+            HStack {
+                SettingsRowLabel(title: "Keyboard Shortcut", description: "Start or pause a session from anywhere.")
+                Spacer()
+                Button {
+                    if shortcutRecorder.isRecording {
+                        shortcutRecorder.stopRecording()
+                    } else {
+                        shortcutRecorder.startRecording { key, flags in
+                            settings.settings.focusStartShortcut = KeyboardShortcut(key: key, modifiers: flags)
+                        }
+                    }
+                } label: {
+                    Group {
+                        if shortcutRecorder.isRecording {
+                            Text("Press a shortcut")
+                        } else {
+                            Text(verbatim: "\(KeyboardShortcutHelper.description(for: settings.settings.focusStartShortcut.modifiers)) \(settings.settings.focusStartShortcut.key)")
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        }
+                    }
+                    .frame(minWidth: 100)
+                }
+            }
+            .padding()
+
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Sync with System Clock",
+                description: "Mirror sessions to the Clock app using Apple's Clock shortcuts, such as Start Timer, when they're on this Mac.",
+                isOn: $settings.settings.focusShortcutsEnabled
+            )
+            if settings.settings.focusShortcutsEnabled {
+                Divider().padding(.leading, 20)
+                HStack {
+                    Text("Sync Mode")
+                    Spacer()
+                    Picker("", selection: $settings.settings.focusShortcutSyncMode) {
+                        ForEach(FocusShortcutSyncMode.allCases) { mode in
+                            Text(verbatim: mode.displayName).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                }
+                .padding()
+            }
+
+            Divider().padding(.leading, 20)
+            shortcutPicker("When a Session Starts", selection: $settings.settings.focusStartShortcutName)
+            Divider().padding(.leading, 20)
+            shortcutPicker("When a Session Ends", selection: $settings.settings.focusEndShortcutName)
+        }
         .onAppear {
             FocusSessionManager.refreshInstalledShortcuts()
         }
     }
 
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 14, weight: .semibold))
-            .padding(.top, 12).padding(.horizontal, 16).padding(.bottom, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private func shortcutPicker(_ title: LocalizedStringKey, selection: Binding<String>) -> some View {
+        HStack {
+            SettingsRowLabel(title: title, description: "Run a shortcut from the Shortcuts app.")
+            Spacer()
+            Picker("", selection: selection) {
+                Text("None").tag("")
+                ForEach(shortcutsCatalog.installedNames, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 180)
+        }
+        .padding()
     }
 
     @ViewBuilder
@@ -13462,7 +13299,7 @@ private struct FocusScheduleRowView: View {
         HStack(spacing: 10) {
             Image(systemName: "clock.fill")
                 .font(.system(size: 12))
-                .foregroundColor(schedule.isActive ? .green : .secondary)
+                .foregroundColor(schedule.isActive ? .accentColor : .secondary)
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -13565,13 +13402,12 @@ private struct AddFocusScheduleView: View {
                         .lineLimit(1)
                         .frame(width: 62)
                         .multilineTextAlignment(.trailing)
-                        .help("No limit — enter any number of minutes")
                     Text("min")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }
 
-                Text("Scheduled sessions respect your blocking, environment, and ambient-sound settings — they behave exactly like sessions you start manually.")
+                Text("Scheduled sessions use the same blocking, environment and sound settings as sessions you start yourself.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -13615,7 +13451,7 @@ private struct AddFocusScheduleView: View {
                 }
                 .font(.caption)
                 .buttonStyle(.plain)
-                .foregroundColor(.green)
+                .foregroundColor(.accentColor)
             }
 
             HStack(spacing: 6) {
@@ -13641,10 +13477,11 @@ private struct AddFocusScheduleView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 28)
                 .background(
-                    isOn ? Color.green : Color.white.opacity(0.08),
+                    isOn ? Color.accentColor : Color.white.opacity(0.08),
                     in: Capsule()
                 )
-        }        .buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
         .help(token.label)
     }
 }

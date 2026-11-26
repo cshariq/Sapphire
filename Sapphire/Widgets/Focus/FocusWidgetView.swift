@@ -14,9 +14,6 @@ struct FocusWidgetView: View {
     @Environment(\.navigationStack) private var navigationStack
 
     private var accent: Color { focusManager.isFocusBlock ? .green : .orange }
-    private var accentColors: [Color] {
-        focusManager.isFocusBlock ? [.green, .mint, .teal] : [.orange, .yellow, .pink]
-    }
 
     private var phaseLabel: String {
         if focusManager.isPaused { return String(localized: "PAUSED") }
@@ -58,19 +55,11 @@ struct FocusWidgetView: View {
     private var primaryInfo: some View {
         HStack(spacing: 8) {
             if focusManager.isSessionActive {
-                FocusWidgetTimerRing(
-                    focusManager: focusManager,
-                    accent: accent,
-                    accentColors: accentColors
-                )
+                FocusWidgetTimerRing(focusManager: focusManager, accent: accent)
             } else {
                 Image(systemName: "moon.fill")
                     .font(.system(size: 40))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(
-                        LinearGradient(colors: [.purple, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .shadow(radius: 2)
+                    .foregroundColor(.indigo)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -147,22 +136,17 @@ struct FocusWidgetView: View {
 private struct FocusWidgetTimerRing: View {
     @ObservedObject var focusManager: FocusSessionManager
     let accent: Color
-    let accentColors: [Color]
 
     var body: some View {
         ZStack {
             LayerGradientProgressRing(
                 motion: .focusBlock(focusManager),
                 lineWidth: 4,
-                colors: accentColors,
-                shadowColor: accent.opacity(0.45),
-                shadowRadius: 6,
-                shadowIncludesTrack: true
+                colors: [accent]
             )
             Image(systemName: focusManager.isFocusBlock ? "figure.mind.and.body" : "cup.and.saucer.fill")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(accent)
-                .shadow(color: accent.opacity(0.45), radius: 6)
         }
         .frame(width: 44, height: 44)
     }
