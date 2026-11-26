@@ -48,7 +48,10 @@ struct NotchSurfaceStyle: Equatable {
     static func resolve(_ input: Inputs) -> NotchSurfaceStyle {
         let appearance = input.appearance
         let config = input.config
-        let isOpaqueSolid = appearance.backgroundStyle == .solid && appearance.opacity >= 1
+        let solidColor = NSColor(appearance.solidColor.color)
+        // The picker's own alpha and Master Opacity both scale the solid fill.
+        let solidAlpha = solidColor.alphaComponent * CGFloat(max(0, min(1, appearance.opacity)))
+        let isOpaqueSolid = appearance.backgroundStyle == .solid && solidAlpha >= 1
         let shadowRadius: CGFloat = input.notchState == .clickExpanded ? config.expandedShadowRadius : 12
         let shadowYOffset: CGFloat = input.notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
         let shadowHidden = input.notchState == .initial || input.isManuallyHidden
@@ -71,8 +74,8 @@ struct NotchSurfaceStyle: Equatable {
             )
         }
 
-        let glassTint: NSColor? = appearance.backgroundStyle == .solid && appearance.opacity > 0
-            ? NSColor(appearance.solidColor.color).withAlphaComponent(appearance.opacity)
+        let glassTint: NSColor? = appearance.backgroundStyle == .solid && solidAlpha > 0
+            ? solidColor.withAlphaComponent(solidAlpha)
             : nil
 
         var style = NotchSurfaceStyle(
@@ -118,6 +121,11 @@ struct NotchSurfaceStyle: Equatable {
         }
 
         style.fill = layerFill(for: appearance, radialEndRadius: input.radialEndRadius)
+        // A fully clear fill would still cast its shadow and glows as a dark notch shape.
+        if style.fill?.isClear == true {
+            style.fill = nil
+            return style
+        }
         if config.isFloatingIsland, case .solid(let color)? = style.fill, color.alphaComponent >= 1 {
             let lifted = color.usingColorSpace(.sRGB)?.blended(withFraction: 0.06, of: .white) ?? color
             style.fill = .linearGradient(colors: [color, lifted], locations: [0.55, 1], start: .top, end: .bottom)

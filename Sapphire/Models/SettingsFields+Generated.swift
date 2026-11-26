@@ -440,6 +440,8 @@ extension SettingsField {
         SettingsField(\.hudShowFunctionName),
         SettingsField(\.hudVisualStyle),
         SettingsField(\.hudCustomColor),
+        SettingsField(\.xdrHudGradientStart),
+        SettingsField(\.xdrHudGradientEnd),
         SettingsField(\.hudAdaptiveTransitionStyle),
         SettingsField(\.hudAdaptiveColor1),
         SettingsField(\.hudAdaptiveColor2),

@@ -1314,7 +1314,7 @@ struct DynamicSliderIndicator: View {
     private func sliderFill() -> some View {
         if isXDR {
             LinearGradient(
-                gradient: Gradient(colors: [.purple, .blue]),
+                gradient: Gradient(colors: [settings.settings.xdrHudGradientStart.color, settings.settings.xdrHudGradientEnd.color]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
@@ -1336,7 +1336,7 @@ struct DynamicSliderIndicator: View {
     }
 
     private var shadowColor: Color {
-        if isXDR { return .blue }
+        if isXDR { return settings.settings.xdrHudGradientEnd.color }
         return indicatorColor
     }
 
@@ -1410,7 +1410,6 @@ struct DynamicDotsIndicator: View {
 
     private var indicatorColor: Color {
         if forceGreen { return .green }
-        if isXDR { return .blue }
         switch settings.settings.hudVisualStyle {
         case .white: return .white.opacity(0.7)
         case .color: return settings.settings.hudCustomColor?.color ?? .accentColor
@@ -1426,7 +1425,12 @@ struct DynamicDotsIndicator: View {
     }
 
     private func dotColor(for index: Int) -> Color {
-        index < filledDots ? indicatorColor : Color.gray.opacity(0.3)
+        guard index < filledDots else { return Color.gray.opacity(0.3) }
+        guard isXDR && !forceGreen else { return indicatorColor }
+        return settings.settings.xdrHudGradientStart.color.lerp(
+            to: settings.settings.xdrHudGradientEnd.color,
+            t: CGFloat(index) / CGFloat(max(filledDots - 1, 1))
+        )
     }
 
     private func dotGlowRadius(for index: Int) -> CGFloat {

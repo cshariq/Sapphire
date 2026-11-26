@@ -360,7 +360,7 @@ private struct LockScreenBatteryInfoSlot: View {
 
                             ZStack(alignment: .leading) {
                                 batterySymbol
-                                    .foregroundColor(.white.opacity(0.35))
+                                    .foregroundStyle(.white.secondary)
 
                                 GeometryReader { geo in
                                     let insetHorizontal = geo.size.width * 0.11

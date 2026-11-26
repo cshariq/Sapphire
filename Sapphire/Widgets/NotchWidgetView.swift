@@ -265,6 +265,7 @@ private struct NotchDefaultWidgetsView: View {
     @Environment(\.isCalendarHovered) private var isCalendarHovered
     @ObservedSettings private var settings: SettingsObserver
     @State private var musicVisibility: MusicWidgetVisibilitySnapshot
+    @State private var keepsMusicWidgetUntilClosed = false
 
     let calendarViewModel: InteractiveCalendarViewModel
     private let musicWidget = MusicManager.shared
@@ -281,17 +282,7 @@ private struct NotchDefaultWidgetsView: View {
             guard !widgetType.isPremiumLocked else { return false }
             switch widgetType {
             case .music:
-                return MusicWidgetVisibilityPolicy.shouldShow(
-                    isEnabled: settings.settings.musicWidgetEnabled,
-                    hideWhenNotPlaying: settings.settings.hideMusicWidgetWhenNotPlaying,
-                    isPlaying: musicVisibility.isPlaying,
-                    hidePausedSpotifyWhenIdle: settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle,
-                    isSpotifyPausedWithNoOtherPlayback: musicVisibility.isSpotifyPausedWithNoOtherPlayback,
-                    hideSpotifyWhenAppClosed: settings.settings.hideSpotifyWidgetWhenAppClosed,
-                    isLoggedIntoSpotify: musicVisibility.isLoggedIntoSpotify,
-                    isSpotifyOnlySource: musicVisibility.isSpotifyOnlySource,
-                    isSpotifyAppRunning: musicVisibility.isSpotifyAppRunning
-                )
+                return showsMusicWidget || (keepsMusicWidgetUntilClosed && settings.settings.musicWidgetEnabled)
             case .weather:
                 return settings.settings.weatherWidgetEnabled
             case .sports:
@@ -333,6 +324,20 @@ private struct NotchDefaultWidgetsView: View {
         )
     }
 
+    private var showsMusicWidget: Bool {
+        MusicWidgetVisibilityPolicy.shouldShow(
+            isEnabled: settings.settings.musicWidgetEnabled,
+            hideWhenNotPlaying: settings.settings.hideMusicWidgetWhenNotPlaying,
+            isPlaying: musicVisibility.isPlaying,
+            hidePausedSpotifyWhenIdle: settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle,
+            isSpotifyPausedWithNoOtherPlayback: musicVisibility.isSpotifyPausedWithNoOtherPlayback,
+            hideSpotifyWhenAppClosed: settings.settings.hideSpotifyWidgetWhenAppClosed,
+            isLoggedIntoSpotify: musicVisibility.isLoggedIntoSpotify,
+            isSpotifyOnlySource: musicVisibility.isSpotifyOnlySource,
+            isSpotifyAppRunning: musicVisibility.isSpotifyAppRunning
+        )
+    }
+
     var body: some View {
         let widgets = enabledAndOrderedWidgets
         HStack(spacing: 20) {
@@ -347,10 +352,12 @@ private struct NotchDefaultWidgetsView: View {
                 }
             }
         }
-        .onAppear(perform: refreshMusicVisibility)
-        .onReceive(Self.musicVisibilityChanges) { snapshot in
-            if snapshot != musicVisibility { musicVisibility = snapshot }
+        .onAppear {
+            // The view stays alive between openings; each opening starts from the hide rules again.
+            keepsMusicWidgetUntilClosed = false
+            musicVisibility = MusicWidgetVisibilitySnapshot(manager: musicWidget)
         }
+        .onReceive(Self.musicVisibilityChanges, perform: applyMusicVisibility)
         .onReceive(
             NSWorkspace.shared.notificationCenter
                 .publisher(for: NSWorkspace.didLaunchApplicationNotification)
@@ -369,8 +376,13 @@ private struct NotchDefaultWidgetsView: View {
     .removeDuplicates()
 
     private func refreshMusicVisibility() {
-        let snapshot = MusicWidgetVisibilitySnapshot(manager: musicWidget)
+        applyMusicVisibility(MusicWidgetVisibilitySnapshot(manager: musicWidget))
+    }
+
+    private func applyMusicVisibility(_ snapshot: MusicWidgetVisibilitySnapshot) {
         guard snapshot != musicVisibility else { return }
+        // Pausing from the open notch shouldn't pull the widget out from under the pointer.
+        if showsMusicWidget { keepsMusicWidgetUntilClosed = true }
         musicVisibility = snapshot
     }
 

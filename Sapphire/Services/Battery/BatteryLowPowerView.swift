@@ -57,8 +57,9 @@ struct BatteryLowPowerView: View {
                             .frame(width: 80, height: 45)
 
                         Image(systemName: isLowPowerActive ? "leaf.fill" : "battery.25")
+                            .dimmedBatteryCase(!isLowPowerActive)
                             .font(.system(size: 32, weight: .light))
-                            .foregroundColor(accentColor)
+                            .foregroundStyle(accentColor)
                     }
                 }
             }

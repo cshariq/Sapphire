@@ -1367,7 +1367,7 @@ class Helper: NSObject, HelperProtocol {
                 intervalMinutes: intervalMinutes,
                 chargeLimit: chargeLimit,
                 stopChargingWhileAsleep: stopChargingWhileAsleep,
-                logPath: logPath,
+                logPath: Constant.sleepBatteryLogPath,
                 using: self
             )
             reply(nil)

@@ -632,6 +632,8 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         reconnectTimer?.invalidate(); reconnectTimer = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
+        // The session retains its delegate (self) until invalidated, so a final disconnect must invalidate it.
+        if !shouldReconnect { session.invalidateAndCancel() }
         // Keep latestConnectionID until a replacement arrives so in-flight Connect calls can finish.
         lastPublishedPlayerStateSignature = nil
         isConnected = false
@@ -673,6 +675,8 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
                     guard let self else { return }
                     // Refresh bearer first (web player does this before dealer reconnect).
                     await self.privateAPIManager?.refreshTokensIfNeeded(force: false)
+                    // Disconnected while refreshing: don't revive a manager that has been replaced.
+                    guard self.shouldReconnect else { return }
                     if let token = self.privateAPIManager?.currentAccessToken() {
                         self.accessToken = token
                     }

@@ -12,6 +12,7 @@ import Security
 import ApplicationServices
 import os.log
 import Darwin
+import OpenDirectory
 
 @_silgen_name("CGSessionCopyCurrentDictionary")
 private func CGSessionCopyCurrentDictionary() -> CFDictionary?
@@ -165,6 +166,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func handleFaceIDAuthenticated() {
+        // A frame still in flight when the session was torn down must not unlock.
+        guard isFaceIDAuthenticating else { return }
         if let completion = pendingAppLockFaceIDCompletion {
             pendingAppLockFaceIDCompletion = nil
             tearDownFaceID()
@@ -280,7 +283,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         guard self.isScreenLocked else {
             print("[AuthManager] Screen already unlocked. Sequence aborted.")
             isUnlockInProgress = false
-            stopAllAuthentication()
+            // Keep Bluetooth monitoring: walk-away lock needs it while unlocked.
+            if isFaceIDAuthenticating { tearDownFaceID() }
             return
         }
 
@@ -327,7 +331,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         print("[AuthManager] Cancelling pending password injection: \(reason)")
         unlockAttemptID = UUID()
         isUnlockInProgress = false
-        stopAllAuthentication()
+        if isFaceIDAuthenticating { tearDownFaceID() }
     }
 
     // MARK: - Password & HID Injection
@@ -370,12 +374,17 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             var utf16chars = Array(password.utf16)
             defer { for i in utf16chars.indices { utf16chars[i] = 0 } }
 
-            if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
-                pwDown.keyboardSetUnicodeString(stringLength: utf16chars.count, unicodeString: &utf16chars)
-                pwDown.post(tap: tapLocation)
-            }
-            if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
-                pwUp.post(tap: tapLocation)
+            // A keyboard event carries at most 20 UTF-16 units, so longer passwords go in chunks.
+            for start in stride(from: 0, to: utf16chars.count, by: 20) {
+                var chunk = Array(utf16chars[start..<min(start + 20, utf16chars.count)])
+                defer { for i in chunk.indices { chunk[i] = 0 } }
+                if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+                    pwDown.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+                    pwDown.post(tap: tapLocation)
+                }
+                if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
+                    pwUp.post(tap: tapLocation)
+                }
             }
 
             let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
@@ -635,15 +644,14 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         let userName = currentLoginUserName()
         guard !userName.isEmpty else { return false }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/dscl")
-        process.arguments = [".", "-authonly", userName, password]
+        // Same local-node check as `dscl . -authonly`, without putting the password in an argument list other processes can read.
         do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
+            let node = try ODNode(session: ODSession.default(), type: ODNodeType(kODNodeTypeLocalNodes))
+            let record = try node.record(withRecordType: kODRecordTypeUsers, name: userName, attributes: nil)
+            try record.verifyPassword(password)
+            return true
         } catch {
-            print("[AuthManager] dscl authonly failed: \(error)")
+            print("[AuthManager] Password check failed: \(error.localizedDescription)")
             return false
         }
     }

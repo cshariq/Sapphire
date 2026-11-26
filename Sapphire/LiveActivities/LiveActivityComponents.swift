@@ -869,6 +869,7 @@ struct FilledBatteryIcon: View {
 
     var body: some View {
         Image(systemName: iconName)
+            .dimmedBatteryCase(iconName != "battery.100")
             .font(.system(size: iconSize, weight: iconWeight))
             .foregroundStyle(iconStyle)
             .frame(width: iconSize + 4, height: iconSize / 2 + 4)
@@ -876,6 +877,15 @@ struct FilledBatteryIcon: View {
             .animation(.easeInOut(duration: 0.3), value: managementState)
             .padding(.leading, 4)
             .padding(.trailing, 7)
+    }
+}
+
+extension View {
+    /// Draws a battery symbol's case one level dimmer than its charge, like the macOS menu bar.
+    /// Pass false for single-layer symbols (a full battery, a leaf), which would otherwise dim entirely.
+    func dimmedBatteryCase(_ isEnabled: Bool = true) -> some View {
+        symbolRenderingMode(.palette)
+            .foregroundStyle(isEnabled ? HierarchicalShapeStyle.secondary : .primary, .primary)
     }
 }
 

@@ -289,8 +289,10 @@ private struct NotchIslandBarTypeButton: View {
                 context.onPin(context.isPinned.wrappedValue)
             }
         case .battery:
-            NotchIslandBarButton(systemName: batterySymbol, isSelected: isSelected, help: batteryHelp) {
-                open(.battery)
+            NotchIslandBarButton(isSelected: isSelected, help: batteryHelp, action: { open(.battery) }) {
+                Image(systemName: batterySymbol)
+                    .font(.system(size: 14, weight: .semibold))
+                    .dimmedBatteryCase(batterySymbol != "battery.100percent")
             }
         case .continuity:
             NotchIslandBarButton(systemName: "iphone", isSelected: isSelected, help: "Phone") {
