@@ -689,7 +689,7 @@ class TidalAPIManager {
         return await requestData(url: url)
     }
 
-    private func requestData<T: Decodable>(url: URL) async -> T? {
+    private func requestData<T: Decodable>(url: URL, retried: Bool = false) async -> T? {
         guard await ensureValidToken() else { return nil }
 
         var request = URLRequest(url: url)
@@ -700,9 +700,10 @@ class TidalAPIManager {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else { return nil }
-            if httpResponse.statusCode == 401 {
+            // Retry once; a 401 during a refresh (the profile fetch) would otherwise wait on its own refresh task.
+            if httpResponse.statusCode == 401, !retried, refreshTask == nil {
                 guard await refreshTokenIfNeeded(force: true) else { return nil }
-                return await requestData(url: url)
+                return await requestData(url: url, retried: true)
             }
             guard (200...299).contains(httpResponse.statusCode) else {
                 let errorBody = String(data: data, encoding: .utf8) ?? "No response body"
@@ -716,7 +717,7 @@ class TidalAPIManager {
         }
     }
 
-    private func writeRequest(path: String, method: String, body: Data?) async -> Bool? {
+    private func writeRequest(path: String, method: String, body: Data?, retried: Bool = false) async -> Bool? {
         guard await ensureValidToken(), let url = URL(string: "\(baseURL)\(path)") else { return nil }
 
         var request = URLRequest(url: url)
@@ -729,9 +730,9 @@ class TidalAPIManager {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else { return nil }
-            if httpResponse.statusCode == 401 {
+            if httpResponse.statusCode == 401, !retried, refreshTask == nil {
                 guard await refreshTokenIfNeeded(force: true) else { return nil }
-                return await writeRequest(path: path, method: method, body: body)
+                return await writeRequest(path: path, method: method, body: body, retried: true)
             }
             guard (200...299).contains(httpResponse.statusCode) else {
                 let errorBody = String(data: data, encoding: .utf8) ?? "No response body"

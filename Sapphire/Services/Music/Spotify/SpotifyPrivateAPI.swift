@@ -697,6 +697,7 @@ class SpotifyPrivateAPIManager {
             await performUserVerification()
             await sendGaboSessionEvent()
             self.isLoggedIn = true
+            softReconnectRetryCount = 0
             await saveSession()
 
             do {
@@ -716,9 +717,13 @@ class SpotifyPrivateAPIManager {
     }
 
     @ObservationIgnored private var softReconnectRetryTask: Task<Void, Never>?
+    @ObservationIgnored private var softReconnectRetryCount = 0
 
-    private func scheduleSoftReconnectRetry(after delay: TimeInterval = 3.0) {
+    private func scheduleSoftReconnectRetry(after baseDelay: TimeInterval = 3.0) {
         softReconnectRetryTask?.cancel()
+        // Back off while offline or rate-limited (3 s, 6 s, 12 s… up to 5 min) instead of retrying every 3 s for hours.
+        let delay = min(baseDelay * pow(2, Double(min(softReconnectRetryCount, 7))), 300)
+        softReconnectRetryCount += 1
         softReconnectRetryTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
@@ -3478,7 +3483,7 @@ extension SpotifyPrivateAPIManager {
         return false
     }
 
-    func fetchPopularReleases(artistId: String) async -> [SpotifyPopularRelease] {
+    func fetchPopularReleases(artistId: String, trackURI: String? = nil) async -> [SpotifyPopularRelease] {
         guard let client = wgSpclientClient else { return [] }
         let path = "/playlist/v2/list/popular-release-segments-main-roles/artist_\(artistId)"
         do {
@@ -3495,7 +3500,9 @@ extension SpotifyPrivateAPIManager {
                     imageURL: imageURL.flatMap { URL(string: $0) }
                 )
             }
-            publishExtendedState(popularReleases: releases)
+            if trackURI == nil || playerState?.track?.uri == trackURI {
+                publishExtendedState(popularReleases: releases)
+            }
             return releases
         } catch {
             return []
@@ -4768,7 +4775,9 @@ extension SpotifyPrivateAPIManager {
                     role: item.role ?? item.data?.role
                 )
             } ?? []
-            publishExtendedState(trackArtistCredits: credits)
+            if playerState?.track?.uri == trackURI {
+                publishExtendedState(trackArtistCredits: credits)
+            }
             return credits
         } catch {
             print("[SpotifyExtendedAPI] queryTrackArtists failed: \(error.localizedDescription)")
@@ -5082,6 +5091,8 @@ extension SpotifyPrivateAPIManager {
         let (profile, npvConcerts) = await npvTask
         let geoConcerts = await geoTask
         let concerts = geoConcerts.isEmpty ? npvConcerts : geoConcerts
+        // A late reply for the previous track must not replace the artist of the one now playing.
+        guard playerState?.track?.uri == trackURI else { return concerts }
         if let profile {
             publishExtendedState(concerts: concerts, nowPlayingArtist: profile)
         } else {
