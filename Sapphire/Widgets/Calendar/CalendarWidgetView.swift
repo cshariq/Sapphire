@@ -64,7 +64,7 @@ struct CalendarWidgetView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .frame(width: 55, alignment: .leading)
-                    .padding(.top, 2)
+                    .padding(.top, 6)
                     .id("Month-\(viewModel.selectedMonthAbbreviated)")
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .offset(y: -10)),
@@ -76,7 +76,7 @@ struct CalendarWidgetView: View {
 
             scheduleView
         }
-        .padding(.top, 10)
+        .padding(.top, 6)
         .frame(width: 240, height: 100)
         .foregroundColor(.white)
         .environmentObject(viewModel)
@@ -143,7 +143,8 @@ struct CalendarWidgetView: View {
                 }
             }
         }
-        .frame(height: 36)
+        // Tall enough for the centred day at full size; the scroll view clips anything taller.
+        .frame(height: 42)
     }
 
     @ViewBuilder
@@ -235,7 +236,7 @@ struct DynamicDayView: View {
         let centerX = containerWidth / 2
 
         VStack(spacing: 3) {
-            tinted(Text(dayName).font(.system(size: 10, weight: .semibold, design: .rounded)),
+            tinted(Text(dayName).font(.system(size: 14, weight: .semibold, design: .rounded)),
                    base: letterBase, focus: focus, centerX: centerX)
                 .id(dayName)
                 .transition(
@@ -245,13 +246,15 @@ struct DynamicDayView: View {
                     )
                 )
 
-            tinted(Text(date.format(as: "d")).font(.system(size: 13, weight: .bold, design: .rounded)),
+            tinted(Text(date.format(as: "d")).font(.system(size: 18, weight: .bold, design: .rounded)),
                    base: numberBase, focus: focus, centerX: centerX)
         }
+        .fixedSize()
         .visualEffect { content, proxy in
             let factor = Self.focusFactor(proxy, centerX: centerX)
+            // Drawn at the centred size and only scaled down: scaling rendered text up pixelates it.
             return content
-                .scaleEffect(0.7 + factor * 0.7)
+                .scaleEffect(0.5 + factor * 0.5)
                 .opacity(0.5 + factor * 0.5)
         }
         .frame(width: 28)
