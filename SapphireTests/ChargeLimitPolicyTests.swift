@@ -50,6 +50,25 @@ struct ChargeLimitPolicyTests {
         #expect(!ChargeLimitPolicy.shouldInhibitForSleep(charge: 50, limit: 80, isCharging: false, stopChargingWhenSleeping: false))
     }
 
+    // The native limit needs no helper, so it's also used when the helper has no keys or doesn't answer.
+    @Test func nativeLimitCoversModesTheHelperCantEnforce() {
+        for mode in [ChargeControlMode.adapter, .unsupported] {
+            #expect(ChargeLimitPolicy.usesNativeLimit(mode: mode, limit: 80, manualChargePaused: false))
+            #expect(!ChargeLimitPolicy.usesNativeLimit(mode: mode, limit: 79, manualChargePaused: false))
+            #expect(!ChargeLimitPolicy.usesNativeLimit(mode: mode, limit: 100, manualChargePaused: false))
+            #expect(!ChargeLimitPolicy.usesNativeLimit(mode: mode, limit: 80, manualChargePaused: true))
+        }
+        for mode in [ChargeControlMode.firmware, .legacy] {
+            #expect(!ChargeLimitPolicy.usesNativeLimit(mode: mode, limit: 80, manualChargePaused: false))
+        }
+    }
+
+    @Test func pausedIsOnlyShownOnceChargingStops() {
+        #expect(ChargeLimitPolicy.displayedState(.inhibited, isCharging: true) == .charging)
+        #expect(ChargeLimitPolicy.displayedState(.inhibited, isCharging: false) == .inhibited)
+        #expect(ChargeLimitPolicy.displayedState(.sailing, isCharging: false) == .sailing)
+    }
+
     // At 100% Sapphire leaves the charge keys alone unless it is releasing its own hold, so macOS's Charge Limit stays in charge.
     @Test func fullLimitLeavesChargingToMacOSUnlessReleasingOwnHold() {
         for mode in [ChargeControlMode.firmware, .legacy, .unsupported] {

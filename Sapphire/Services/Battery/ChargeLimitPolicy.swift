@@ -22,6 +22,20 @@ enum ChargeLimitPolicy {
         stopChargingWhenSleeping || (limit < 100 && (charge >= limit || isCharging))
     }
 
+    /// macOS's own Charge Limit needs no helper, so it's used wherever the helper can't hold the charge itself:
+    /// gated firmware (.adapter), or a helper that has no keys or doesn't answer (.unsupported).
+    static func usesNativeLimit(mode: ChargeControlMode, limit: Int, manualChargePaused: Bool) -> Bool {
+        (mode == .adapter || mode == .unsupported)
+            && !manualChargePaused
+            && NativeChargeLimit.supportedRange.contains(limit)
+            && limit < 100
+    }
+
+    /// The notch only says charging is paused once it has actually stopped.
+    static func displayedState(_ state: ManagementState, isCharging: Bool) -> ManagementState {
+        state == .inhibited && isCharging ? .charging : state
+    }
+
     /// At 100% there is nothing to enforce. Unless Sapphire must release a hold it sent itself, the firmware/legacy
     /// charge keys are left alone, because writing them can switch off macOS's own Charge Limit. Adapter mode
     /// always re-enables AC power.
