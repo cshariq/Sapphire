@@ -380,16 +380,8 @@ private struct NotchIntelligenceControls: View {
     private var intelligenceButton: some View {
         let isLiveRunning = geminiLiveManager.isSessionRunning
         let baseSize = NotchConfiguration.geminiButtonBaseSize
-        let activeGradient = LinearGradient(
-            colors: [Color.purple.opacity(0.8), Color.indigo.opacity(0.6)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        let stopGradient = LinearGradient(
-            colors: [Color.orange.opacity(0.8), Color.red],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        let activeFill = Color.purple.opacity(0.8)
+        let stopFill = Color.red
 
         return Button {
             if isLiveRunning {
@@ -407,19 +399,7 @@ private struct NotchIntelligenceControls: View {
                         weight: .medium
                     ))
                     .rotationEffect(.degrees(isHovered ? 90 : 0))
-                    .foregroundStyle(
-                        isHovered
-                            ? LinearGradient(
-                                colors: [.white, .white.opacity(0.5)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                            : LinearGradient(
-                                colors: [.purple, .indigo],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                    )
+                    .foregroundStyle(isHovered ? Color.white : Color.purple)
                     .animation(
                         .spring(
                             response: NotchConfiguration.geminiButtonSpringResponse,
@@ -438,7 +418,7 @@ private struct NotchIntelligenceControls: View {
             }
             .padding(.horizontal, isHovered ? NotchConfiguration.geminiButtonActiveHorizontalPadding : 0)
             .frame(width: isHovered ? nil : baseSize, height: baseSize)
-            .background(isHovered ? (isLiveRunning ? stopGradient : activeGradient) : nil)
+            .background(isHovered ? (isLiveRunning ? stopFill : activeFill) : nil)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)

@@ -452,7 +452,7 @@ struct EQBassControl: View {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 10))
-                Text("Raising the Clear Bass slider or the low EQ bands adds level below ~150 Hz and can clip into audible distortion. Ease off if it sounds crunchy.")
+                Text("Boosting Clear Bass or the low EQ bands can cause clipping and distortion.")
                     .font(.system(size: 10))
                     .fixedSize(horizontal: false, vertical: true)
             }

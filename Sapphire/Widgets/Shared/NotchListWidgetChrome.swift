@@ -10,7 +10,6 @@ struct NotchMiniListWidget<Item: Identifiable, Row: View>: View {
     let title: String
     let systemImage: String
     let tint: Color
-    let gradient: [Color]
     let count: Int
     let items: [Item]
     let emptyText: String
@@ -42,7 +41,7 @@ struct NotchMiniListWidget<Item: Identifiable, Row: View>: View {
         HStack(spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(tint.opacity(0.25))
                     .frame(width: 26, height: 26)
                 Image(systemName: systemImage)
                     .font(.system(size: 11, weight: .semibold))

@@ -99,13 +99,7 @@ struct MirrorWidgetView: View {
         VStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.indigo.opacity(0.5), Color.purple.opacity(0.35)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(Color.indigo.opacity(0.45))
                     .frame(width: 46, height: 46)
                 Circle()
                     .stroke(.white.opacity(0.22), lineWidth: 1)

@@ -5270,25 +5270,25 @@
         }
       }
     },
-    "A new way to experience your Mac's notch.\nLet's get you set up.": {
+    "A new way to use your Mac's notch.": {
       "comment": "User-facing Sapphire interface text. Keep product names and interpolated user content unchanged.",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A new way to experience your Mac's notch.\nLet's get you set up."
+            "value": "A new way to use your Mac's notch."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "以全新方式使用 Mac 的刘海区域。\n现在开始设置。"
+            "value": "以全新方式使用 Mac 的刘海区域。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "以全新方式體驗 Mac 的瀏海區域。\n現在開始設定吧。"
+            "value": "以全新方式使用 Mac 的瀏海區域。"
           }
         }
       }
@@ -5559,29 +5559,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 代理程式、建置和長時間執行的終端機指令執行時會顯示於此處。"
-          }
-        }
-      }
-    },
-    "AI-independent Mail features: OTP detection and parcel tracking.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI-independent Mail features: OTP detection and parcel tracking."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不依赖 AI 的邮件功能：验证码检测和包裹追踪。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不依賴 AI 的郵件功能：驗證碼偵測和包裹追蹤。"
           }
         }
       }
@@ -6517,12 +6494,12 @@
         }
       }
     },
-    "Adaptive tint follows the colours of your wallpaper behind the menu bar. Turn this on to blend its left and right sides instead of using one average colour.": {
+    "Adaptive tint follows the colors of your wallpaper behind the menu bar. Turn this on to blend its left and right sides instead of using one average color.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Adaptive tint follows the colours of your wallpaper behind the menu bar. Turn this on to blend its left and right sides instead of using one average colour."
+            "value": "Adaptive tint follows the colors of your wallpaper behind the menu bar. Turn this on to blend its left and right sides instead of using one average color."
           }
         },
         "zh-Hans": {
@@ -7721,24 +7698,24 @@
         }
       }
     },
-    "After a revealed item's menu closes, keep items shown this long before rehiding, so a stray click doesn't send the item away. 0 rehides at once.": {
+    "After a revealed item's menu closes, keep items shown this long before rehiding, so a stray click doesn't send the item away. Set to 0 to rehide immediately.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After a revealed item's menu closes, keep items shown this long before rehiding, so a stray click doesn't send the item away. 0 rehides at once."
+            "value": "After a revealed item's menu closes, keep items shown this long before rehiding, so a stray click doesn't send the item away. Set to 0 to rehide immediately."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已展开项目的菜单关闭后，保持显示这段时间再重新隐藏，以免误点导致项目消失。设为 0 会立即隐藏。"
+            "value": "已展开项目的菜单关闭后，保持显示这段时间再重新隐藏，以免误点导致项目消失。设为 0 可立即重新隐藏。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已展開項目的選單關閉後，保持顯示這段時間再重新隱藏，以免誤點導致項目消失。設為 0 會立即隱藏。"
+            "value": "已展開項目的選單關閉後，保持顯示這段時間再重新隱藏，以免誤點導致項目消失。設為 0 可立即重新隱藏。"
           }
         }
       }
@@ -9458,13 +9435,13 @@
         }
       }
     },
-    "Anonymous data is processed by google for analytics. This data is always aggregated and cannot be used to identify you.": {
+    "Anonymous data is processed by Google for analytics. It is always aggregated and cannot be used to identify you.": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Anonymous data is processed by google for analytics. This data is always aggregated and cannot be used to identify you."
+            "value": "Anonymous data is processed by Google for analytics. It is always aggregated and cannot be used to identify you."
           }
         },
         "zh-Hans": {
@@ -10274,25 +10251,25 @@
         }
       }
     },
-    "Apple limits brightness to preserve battery life. While this feature is system-controlled and there are no known side-effects, you should use this feature at your own risk.": {
+    "Apple limits brightness to preserve battery life. There are no known side effects, but use this feature at your own risk.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apple limits brightness to preserve battery life. While this feature is system-controlled and there are no known side-effects, you should use this feature at your own risk."
+            "value": "Apple limits brightness to preserve battery life. There are no known side effects, but use this feature at your own risk."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apple 会限制亮度以延长电池续航。虽然此功能由系统控制且暂无已知副作用，但请自行承担使用风险。"
+            "value": "Apple 会限制亮度以延长电池续航。暂无已知副作用，但请自行承担使用风险。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apple 會限制亮度以延長電池續航力。雖然此功能由系統控制且目前沒有已知的副作用，但使用此功能時請自行承擔風險。"
+            "value": "Apple 會限制亮度以延長電池續航力。目前沒有已知的副作用，但使用此功能時請自行承擔風險。"
           }
         }
       }
@@ -11231,25 +11208,25 @@
         }
       }
     },
-    "Authenticated!": {
+    "Authenticated": {
       "comment": "Runtime user-facing string",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Authenticated!"
+            "value": "Authenticated"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "身份验证成功！"
+            "value": "身份验证成功"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "驗證成功！"
+            "value": "驗證成功"
           }
         }
       }
@@ -12091,29 +12068,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "自動暫停正在播放的媒體，並在重新打開螢幕時繼續播放。"
-          }
-        }
-      }
-    },
-    "Automatically pauses charging if the battery temperature gets too high to prevent heat-related damage and extend its lifespan.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatically pauses charging if the battery temperature gets too high to prevent heat-related damage and extend its lifespan."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "电池温度过高时自动暂停充电，以防止高温损伤并延长使用寿命。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "電池溫度過高時自動暫停充電，以防止高溫損害並延長電池壽命。"
           }
         }
       }
@@ -12960,6 +12914,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "電量低於"
+          }
+        }
+      }
+    },
+    "Battery Management": {
+      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Battery Management"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电池管理"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電池管理"
           }
         }
       }
@@ -13983,29 +13960,6 @@
         }
       }
     },
-    "Bluetooth is off!": {
-      "comment": "Runtime user-facing string",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bluetooth is off!"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "蓝牙已关闭！"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "藍牙已關閉！"
-          }
-        }
-      }
-    },
     "Bluetooth unlock enabled": {
       "localizations": {
         "en": {
@@ -14181,6 +14135,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "提升通話語音清晰度"
+          }
+        }
+      }
+    },
+    "Boosting Clear Bass or the low EQ bands can cause clipping and distortion.": {
+      "comment": "Native local UI wording in DeviceEQView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boosting Clear Bass or the low EQ bands can cause clipping and distortion."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提高清晰低音或低频均衡器频段可能导致削波和失真。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "調高「清晰低音」或低頻 EQ 頻段可能造成削波和失真。"
           }
         }
       }
@@ -14734,24 +14711,24 @@
         }
       }
     },
-    "Browse your library, recommendations and the full catalog, and play without leaving the notch.": {
+    "Browse your library, recommendations and the full catalog.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Browse your library, recommendations and the full catalog, and play without leaving the notch."
+            "value": "Browse your library, recommendations and the full catalog."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "浏览资料库、推荐内容及完整曲库，无需离开刘海区域即可播放。"
+            "value": "浏览资料库、推荐内容及完整曲库。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "瀏覽資料庫、推薦內容及完整曲庫，無須離開瀏海區域即可播放。"
+            "value": "瀏覽資料庫、推薦內容及完整曲庫。"
           }
         }
       }
@@ -16526,6 +16503,29 @@
         }
       }
     },
+    "Changing the shape of a Live Activity.": {
+      "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changing the shape of a Live Activity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时活动改变形状时。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時動態變換形狀時。"
+          }
+        }
+      }
+    },
     "Charge": {
       "comment": "Settings interface",
       "localizations": {
@@ -17601,24 +17601,24 @@
         }
       }
     },
-    "Classic is the bar waveform. Continuity is the SF Symbol used by the old phone media activity.": {
+    "Classic is the bar waveform. Continuity is the icon from the old phone media activity.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Classic is the bar waveform. Continuity is the SF Symbol used by the old phone media activity."
+            "value": "Classic is the bar waveform. Continuity is the icon from the old phone media activity."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "“经典”采用条形波形。“Continuity”采用旧版手机媒体活动使用的 SF Symbol 图标。"
+            "value": "“经典”采用条形波形。“Continuity”采用旧版手机媒体活动的图标。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "「經典」採用條形波形。「Continuity」採用舊版手機媒體動態使用的 SF Symbol 圖像。"
+            "value": "「經典」採用條形波形。「Continuity」採用舊版手機媒體動態的圖像。"
           }
         }
       }
@@ -18217,6 +18217,29 @@
         }
       }
     },
+    "Click Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity.": {
+      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击“安装辅助服务”，批准 macOS 提示，然后在“系统设置”→“通用”→“登录项”→“后台活动”中启用 Sapphire。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點一下「安裝輔助服務」。核准 macOS 提示，然後在「系統設定」→「一般」→「登入項目」→「背景活動」中啟用 Sapphire。"
+          }
+        }
+      }
+    },
     "Click Window": {
       "localizations": {
         "en": {
@@ -18487,24 +18510,24 @@
         }
       }
     },
-    "Clicking the control item opens a bar under the menu bar with the hidden items instead of making room for them. Useful when the notch leaves no space": {
+    "Clicking the control item opens a bar under the menu bar with the hidden items instead of making room for them. Useful when the notch leaves no space.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Clicking the control item opens a bar under the menu bar with the hidden items instead of making room for them. Useful when the notch leaves no space"
+            "value": "Clicking the control item opens a bar under the menu bar with the hidden items instead of making room for them. Useful when the notch leaves no space."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点按控制项目会在菜单栏下方打开一个栏，显示隐藏项目，无需在原菜单栏中腾出空间。适合刘海导致空间不足的情况"
+            "value": "点按控制项目会在菜单栏下方打开一个栏，显示隐藏项目，无需在原菜单栏中腾出空间。适合刘海导致空间不足的情况。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "按一下控制項目會在選單列下方開啟一個列，顯示隱藏項目，無須在原選單列中騰出空間。適合瀏海造成空間不足的情況"
+            "value": "按一下控制項目會在選單列下方開啟一個列，顯示隱藏項目，無須在原選單列中騰出空間。適合瀏海造成空間不足的情況。"
           }
         }
       }
@@ -23008,25 +23031,25 @@
         }
       }
     },
-    "Data We NEVER Collect": {
+    "Data We Don't Collect": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Data We NEVER Collect"
+            "value": "Data We Don't Collect"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "我们绝不收集的数据"
+            "value": "我们不收集的数据"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "我們絕不收集的資料"
+            "value": "我們不收集的資料"
           }
         }
       }
@@ -23487,25 +23510,25 @@
         }
       }
     },
-    "Default to airplay devices when spotify isn't running and spotify is authenticated": {
+    "Default to AirPlay devices when Spotify isn't running and you're signed in to Spotify.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Default to airplay devices when spotify isn't running and spotify is authenticated"
+            "value": "Default to AirPlay devices when Spotify isn't running and you're signed in to Spotify."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已授权 Spotify 且 Spotify 未运行时，默认使用 AirPlay 设备"
+            "value": "已登录 Spotify 但 Spotify 未运行时，默认使用 AirPlay 设备。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Spotify 已驗證但未執行時，預設使用 AirPlay 裝置"
+            "value": "已登入 Spotify 但 Spotify 未執行時，預設使用 AirPlay 裝置。"
           }
         }
       }
@@ -23784,25 +23807,25 @@
         }
       }
     },
-    "Desktop motion, input, and window enhancements that stay out of your way.": {
+    "Desktop motion, input, and window enhancements.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Desktop motion, input, and window enhancements that stay out of your way."
+            "value": "Desktop motion, input, and window enhancements."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "自然融入桌面的动画、输入和窗口增强功能。"
+            "value": "桌面动画、输入和窗口增强功能。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "低調不打擾的桌面動態、輸入與視窗增強功能。"
+            "value": "桌面動態、輸入與視窗增強功能。"
           }
         }
       }
@@ -23875,13 +23898,13 @@
         }
       }
     },
-    "Detect UPS/FedEx/USPS/DHL/Amazon tracking numbers in Mail.": {
+    "Detect UPS, FedEx, USPS, DHL, and Amazon tracking numbers in Mail.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Detect UPS/FedEx/USPS/DHL/Amazon tracking numbers in Mail."
+            "value": "Detect UPS, FedEx, USPS, DHL, and Amazon tracking numbers in Mail."
           }
         },
         "zh-Hans": {
@@ -23893,7 +23916,30 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在「郵件」中偵測 UPS／FedEx／USPS／DHL／Amazon 的追蹤號碼。"
+            "value": "在「郵件」中偵測 UPS、FedEx、USPS、DHL 和 Amazon 的追蹤號碼。"
+          }
+        }
+      }
+    },
+    "Detect verification codes and parcel tracking numbers in Mail without AI.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detect verification codes and parcel tracking numbers in Mail without AI."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无需 AI 即可在邮件中检测验证码和包裹运单号。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無需 AI 即可在「郵件」中偵測驗證碼和包裹追蹤號碼。"
           }
         }
       }
@@ -24305,13 +24351,13 @@
         }
       }
     },
-    "Disable Sleep until Charge Limit": {
+    "Disable Sleep Until Charge Limit": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Disable Sleep until Charge Limit"
+            "value": "Disable Sleep Until Charge Limit"
           }
         },
         "zh-Hans": {
@@ -25651,25 +25697,25 @@
         }
       }
     },
-    "Download Complete!": {
+    "Download Complete": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download Complete!"
+            "value": "Download Complete"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "下载完成！"
+            "value": "下载完成"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "下載完成！"
+            "value": "下載完成"
           }
         }
       }
@@ -26084,25 +26130,25 @@
         }
       }
     },
-    "Drag to set the charge limit — charging pauses at this level to help preserve battery health.": {
+    "Drag to set the charge limit. Charging pauses at this level to help preserve battery health.": {
       "comment": "Native local UI wording in BatteryDetailView.swift",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drag to set the charge limit — charging pauses at this level to help preserve battery health."
+            "value": "Drag to set the charge limit. Charging pauses at this level to help preserve battery health."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "拖动设置充电上限；达到该电量后暂停充电，以保护电池健康。"
+            "value": "拖动设置充电上限。达到该电量后暂停充电，以保护电池健康。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "拖移以設定充電上限：充電會在此電量暫停，有助於維護電池健康度。"
+            "value": "拖移以設定充電上限。充電會在此電量暫停，有助於維護電池健康度。"
           }
         }
       }
@@ -28127,6 +28173,29 @@
         }
       }
     },
+    "Enable Track Info on Hover": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Track Info on Hover"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "悬停时显示歌曲信息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "懸停時顯示曲目資訊"
+          }
+        }
+      }
+    },
     "Enable Translation": {
       "comment": "Settings interface",
       "localizations": {
@@ -28351,29 +28420,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "啟用上方的活動圖表以查看你的護眼休息統計資料。"
-          }
-        }
-      }
-    },
-    "Enable track info on Hover": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enable track info on Hover"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "悬停时显示歌曲信息"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "懸停時顯示曲目資訊"
           }
         }
       }
@@ -28671,29 +28717,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "增強"
-          }
-        }
-      }
-    },
-    "Enhance your Mac's lock screen with live activities and widgets directly in the notch area.": {
-      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enhance your Mac's lock screen with live activities and widgets directly in the notch area."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在刘海区域显示实时活动和小组件，增强 Mac 锁定屏幕的功能。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "直接在瀏海區域以即時動態和小工具強化 Mac 的鎖定畫面。"
           }
         }
       }
@@ -29040,13 +29063,13 @@
         }
       }
     },
-    "Error code: SAP-H3\n\nmacOS can't find the helper.\n\nDo fix this:\n1. Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again.\n2. If the helper still does not start, Sapphire will relaunch itself — or click “Relaunch Sapphire”.\n3. When Sapphire opens, click Install if asked.\n4. In System Settings → General → Login Items, enable Sapphire Helper under Allow in the Background.\n\nTry Reset Helper first. Only relaunch the app if the helper is still stuck after that.": {
+    "Error code: SAP-H3\n\nmacOS can't find the helper.\n\nTo fix this:\n1. Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again.\n2. If the helper still does not start, Sapphire will relaunch itself. You can also click “Relaunch Sapphire”.\n3. When Sapphire opens, click Install if asked.\n4. In System Settings → General → Login Items, enable Sapphire Helper under Allow in the Background.\n\nTry Reset Helper first. Only relaunch the app if the helper is still stuck after that.": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Error code: SAP-H3\n\nmacOS can't find the helper.\n\nDo fix this:\n1. Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again.\n2. If the helper still does not start, Sapphire will relaunch itself — or click “Relaunch Sapphire”.\n3. When Sapphire opens, click Install if asked.\n4. In System Settings → General → Login Items, enable Sapphire Helper under Allow in the Background.\n\nTry Reset Helper first. Only relaunch the app if the helper is still stuck after that."
+            "value": "Error code: SAP-H3\n\nmacOS can't find the helper.\n\nTo fix this:\n1. Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again.\n2. If the helper still does not start, Sapphire will relaunch itself. You can also click “Relaunch Sapphire”.\n3. When Sapphire opens, click Install if asked.\n4. In System Settings → General → Login Items, enable Sapphire Helper under Allow in the Background.\n\nTry Reset Helper first. Only relaunch the app if the helper is still stuck after that."
           }
         },
         "zh-Hans": {
@@ -31924,25 +31947,25 @@
         }
       }
     },
-    "Fine-tune every animation parameter to your exact liking.": {
+    "Fine-tune every animation parameter.": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fine-tune every animation parameter to your exact liking."
+            "value": "Fine-tune every animation parameter."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按自己的喜好精细调整每项动画参数。"
+            "value": "精细调整每项动画参数。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "依你的喜好微調每一項動畫參數。"
+            "value": "微調每一項動畫參數。"
           }
         }
       }
@@ -32193,29 +32216,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "專注模式與安全性"
-          }
-        }
-      }
-    },
-    "Focus 20ft away.": {
-      "comment": "Compiler-extracted static interface text",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Focus 20ft away."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "看向约 6 米外。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "注視 20 英尺外的地方。"
           }
         }
       }
@@ -35476,6 +35476,29 @@
         }
       }
     },
+    "Here's what Sapphire collects, and what it doesn't.": {
+      "comment": "User-facing Sapphire interface text. Keep product names and interpolated user content unchanged.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Here's what Sapphire collects, and what it doesn't."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以下是 Sapphire 会收集和不会收集的内容。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以下是 Sapphire 會收集和不會收集的內容。"
+          }
+        }
+      }
+    },
     "Hi-Res Lossless": {
       "localizations": {
         "en": {
@@ -36756,13 +36779,13 @@
         }
       }
     },
-    "Hold your device where you would normally use it when your Mac is unlocked (e.g., next to the trackpad).": {
+    "Hold your device where you would normally use it when your Mac is unlocked, such as next to the trackpad.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold your device where you would normally use it when your Mac is unlocked (e.g., next to the trackpad)."
+            "value": "Hold your device where you would normally use it when your Mac is unlocked, such as next to the trackpad."
           }
         },
         "zh-Hans": {
@@ -36774,7 +36797,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "將裝置放在 Mac 解鎖時你平常使用的位置（例如觸控式軌跡板旁邊）。"
+            "value": "將裝置放在 Mac 解鎖時你平常使用的位置，例如觸控式軌跡板旁邊。"
           }
         }
       }
@@ -38929,52 +38952,6 @@
         }
       }
     },
-    "Instead of showing the full focus name, only on/off.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Instead of showing the full focus name, only on/off."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅显示开启或关闭状态，不显示完整的专注模式名称。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "僅顯示開啟或關閉，不顯示完整的專注模式名稱。"
-          }
-        }
-      }
-    },
-    "Instead of showing the full state, only show icon.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Instead of showing the full state, only show icon."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅显示图标，不显示完整状态。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "僅顯示圖像，不顯示完整狀態。"
-          }
-        }
-      }
-    },
     "Instructions": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
@@ -39216,29 +39193,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "智慧助理 xAI 模型"
-          }
-        }
-      }
-    },
-    "Intelligent Battery Management": {
-      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Intelligent Battery Management"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "智能电池管理"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "智慧型電池管理"
           }
         }
       }
@@ -40982,25 +40936,25 @@
         }
       }
     },
-    "Layer frosted liquid glass on top of the base glass, matching the lock screen treatment.": {
+    "Layer frosted liquid glass on top of the base glass, like on the lock screen.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Layer frosted liquid glass on top of the base glass, matching the lock screen treatment."
+            "value": "Layer frosted liquid glass on top of the base glass, like on the lock screen."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在基础玻璃效果上叠加磨砂液态玻璃，与锁定屏幕效果保持一致。"
+            "value": "在基础玻璃效果上叠加磨砂液态玻璃，与锁定屏幕相同。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在基礎玻璃上疊加磨砂液態玻璃，與鎖定畫面的效果一致。"
+            "value": "在基礎玻璃上疊加磨砂液態玻璃，與鎖定畫面相同。"
           }
         }
       }
@@ -41184,29 +41138,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "離開"
-          }
-        }
-      }
-    },
-    "Leave empty selections unchecked to bind to any Focus filter by enabling \"Focus\" alone.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Leave empty selections unchecked to bind to any Focus filter by enabling \"Focus\" alone."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "若要绑定到任意专注模式过滤条件，只需启用“专注模式”，无需勾选具体项目。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未勾選任何項目時，單獨啟用「專注模式」即可綁定任何專注模式過濾條件。"
           }
         }
       }
@@ -41529,6 +41460,29 @@
         }
       }
     },
+    "Limit charging and heat to slow battery wear.": {
+      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limit charging and heat to slow battery wear."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "限制充电量和温度，减缓电池损耗。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "限制充電量和溫度，減緩電池耗損。"
+          }
+        }
+      }
+    },
     "Limit:": {
       "comment": "Settings interface",
       "localizations": {
@@ -41597,13 +41551,13 @@
         }
       }
     },
-    "Line color = status": {
+    "Line color shows status": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Line color = status"
+            "value": "Line color shows status"
           }
         },
         "zh-Hans": {
@@ -41615,7 +41569,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "線條顏色 = 狀態"
+            "value": "線條顏色表示狀態"
           }
         }
       }
@@ -42983,25 +42937,48 @@
         }
       }
     },
-    "Locks Face ID and requires your password after this much sustained clear spoof detection (not borderline frames).": {
+    "Locks Face ID and requires your password when a spoof is clearly detected for this long.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Locks Face ID and requires your password after this much sustained clear spoof detection (not borderline frames)."
+            "value": "Locks Face ID and requires your password when a spoof is clearly detected for this long."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "持续明确检测到伪装达到此时长后，锁定 Face ID 并要求输入密码，不计入难以判断的画面。"
+            "value": "明确检测到伪装持续达到此时长时，锁定 Face ID 并要求输入密码。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "持續偵測到明確的偽造攻擊達到此時間長度後（不含邊緣畫格），會鎖定 Face ID 並要求輸入密碼。"
+            "value": "明確偵測到偽造攻擊持續達到此時間長度時，會鎖定 Face ID 並要求輸入密碼。"
+          }
+        }
+      }
+    },
+    "Log Battery During Sleep": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log Battery During Sleep"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "睡眠期间记录电池状态"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "睡眠期間記錄電池狀態"
           }
         }
       }
@@ -43094,29 +43071,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "登出"
-          }
-        }
-      }
-    },
-    "Log battery during sleep": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Log battery during sleep"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "睡眠期间记录电池状态"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "睡眠期間記錄電池狀態"
           }
         }
       }
@@ -43235,25 +43189,25 @@
         }
       }
     },
-    "Log in to enable enhanced features like liking tracks and skipping ads directly from the notch.": {
+    "Log in to like tracks and skip ads from the notch.": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Log in to enable enhanced features like liking tracks and skipping ads directly from the notch."
+            "value": "Log in to like tracks and skip ads from the notch."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "登录后即可直接在刘海区域使用收藏歌曲、跳过广告等增强功能。"
+            "value": "登录后即可在刘海区域收藏歌曲和跳过广告。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "登入以啟用增強功能，例如直接從瀏海喜愛曲目和略過廣告。"
+            "value": "登入後即可從瀏海喜愛曲目和略過廣告。"
           }
         }
       }
@@ -43345,29 +43299,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已登入為 %@"
-          }
-        }
-      }
-    },
-    "Logged in successfully!": {
-      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Logged in successfully!"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登录成功！"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "登入成功！"
           }
         }
       }
@@ -43529,6 +43460,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "看向遠處"
+          }
+        }
+      }
+    },
+    "Look at something 20 feet away.": {
+      "comment": "Compiler-extracted static interface text",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Look at something 20 feet away."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看向约 6 米外的物体。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注視 20 英尺外的物體。"
           }
         }
       }
@@ -45419,48 +45373,48 @@
         }
       }
     },
-    "Memory pressure is critical — consider closing some apps.": {
+    "Memory pressure is critical. Consider closing some apps.": {
       "comment": "Runtime user-facing string",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Memory pressure is critical — consider closing some apps."
+            "value": "Memory pressure is critical. Consider closing some apps."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "内存压力严重，建议关闭部分应用。"
+            "value": "内存压力严重。建议关闭部分应用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "記憶體壓力嚴重，建議關閉部分 App。"
+            "value": "記憶體壓力嚴重。建議關閉部分 App。"
           }
         }
       }
     },
-    "Memory pressure is high — consider closing some apps.": {
+    "Memory pressure is high. Consider closing some apps.": {
       "comment": "Runtime user-facing string",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Memory pressure is high — consider closing some apps."
+            "value": "Memory pressure is high. Consider closing some apps."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "内存压力较高，建议关闭部分应用。"
+            "value": "内存压力较高。建议关闭部分应用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "記憶體壓力偏高，建議關閉部分 App。"
+            "value": "記憶體壓力偏高。建議關閉部分 App。"
           }
         }
       }
@@ -46870,29 +46824,6 @@
         }
       }
     },
-    "Monthly Listener: %@": {
-      "comment": "Native local UI wording in MusicPlayerViews.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Monthly Listener: %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "月听众：%@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每月聽眾：%@"
-          }
-        }
-      }
-    },
     "More Like This": {
       "comment": "Native local UI wording in MusicHubViews.swift",
       "localizations": {
@@ -47476,29 +47407,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "瀏海中的多重音訊"
-          }
-        }
-      }
-    },
-    "Multi-audio won't work without Screen Recording permission. Sapphire needs it to adjust app volumes, eqs and more.": {
-      "comment": "Native local UI wording in MultiAudioView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Multi-audio won't work without Screen Recording permission. Sapphire needs it to adjust app volumes, eqs and more."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "多路音频需要屏幕录制权限。Sapphire 使用此权限调整应用音量、均衡器等。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "沒有「螢幕錄製」權限，多重音訊將無法運作。Sapphire 需要此權限才能調整 App 音量、EQ 等。"
           }
         }
       }
@@ -49566,25 +49474,25 @@
         }
       }
     },
-    "No Spotify speakers online. Open the Spotify desktop app (or another Connect device) to play audio — Sapphire only controls playback.": {
+    "No Spotify devices online. Open Spotify on this Mac or another device to play audio. Sapphire only controls playback.": {
       "comment": "Native local UI wording in MusicHubViews.swift",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Spotify speakers online. Open the Spotify desktop app (or another Connect device) to play audio — Sapphire only controls playback."
+            "value": "No Spotify devices online. Open Spotify on this Mac or another device to play audio. Sapphire only controls playback."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有在线的 Spotify 播放设备。请打开 Spotify 桌面应用或其他 Connect 设备播放音频；Sapphire 仅控制播放。"
+            "value": "没有在线的 Spotify 设备。请在这台 Mac 或其他设备上打开 Spotify 播放音频。Sapphire 仅控制播放。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "沒有在線上的 Spotify 揚聲器。請打開 Spotify 桌面 App（或其他 Connect 裝置）來播放音訊，Sapphire 僅控制播放。"
+            "value": "沒有在線上的 Spotify 裝置。請在這台 Mac 或其他裝置上打開 Spotify 來播放音訊。Sapphire 僅控制播放。"
           }
         }
       }
@@ -49886,25 +49794,25 @@
         }
       }
     },
-    "No conditions — this profile will never reveal items.": {
+    "No conditions. This profile will never reveal items.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No conditions — this profile will never reveal items."
+            "value": "No conditions. This profile will never reveal items."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有条件 — 此方案不会显示隐藏项目。"
+            "value": "没有条件。此方案不会显示隐藏项目。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "沒有條件——此設定組永遠不會顯示項目。"
+            "value": "沒有條件。此設定組永遠不會顯示項目。"
           }
         }
       }
@@ -51118,13 +51026,13 @@
         }
       }
     },
-    "No snippets yet — add one, then type its trigger in any app.": {
+    "No snippets yet. Add one, then type its trigger in any app.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No snippets yet — add one, then type its trigger in any app."
+            "value": "No snippets yet. Add one, then type its trigger in any app."
           }
         },
         "zh-Hans": {
@@ -51136,7 +51044,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚無文字片段——加入一個後，在任何 App 中輸入其觸發字詞即可。"
+            "value": "尚無文字片段。加入一個後，在任何 App 中輸入其觸發字詞即可。"
           }
         }
       }
@@ -52179,25 +52087,25 @@
         }
       }
     },
-    "Nothing queued — add tracks from Library or suggestions.": {
+    "Nothing queued. Add tracks from Library or suggestions.": {
       "comment": "Native local UI wording in MusicHubViews.swift",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nothing queued — add tracks from Library or suggestions."
+            "value": "Nothing queued. Add tracks from Library or suggestions."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "播放队列为空，请从资料库或推荐内容添加歌曲。"
+            "value": "播放队列为空。请从资料库或推荐内容添加歌曲。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "待播清單中沒有項目：請從資料庫或建議中加入曲目。"
+            "value": "待播清單中沒有項目。請從資料庫或建議中加入曲目。"
           }
         }
       }
@@ -52834,29 +52742,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "預設為關閉——並非每個長時間執行的指令都值得讓顯示器保持開啟。"
-          }
-        }
-      }
-    },
-    "Off expands the moment the trigger completes.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Off expands the moment the trigger completes."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭后，触发词输入完成时立即展开。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "關閉時，觸發字詞輸入完成後會立即展開。"
           }
         }
       }
@@ -54452,6 +54337,29 @@
         }
       }
     },
+    "Open the Sapphire picker where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the Sapphire picker where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用全局快捷键，在输入位置打开 Sapphire 选取面板。选择剪贴板项目会将其复制并粘贴到光标处；“表情符号”标签页会直接输入表情。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用全域快速鍵，在你輸入文字的位置打開 Sapphire 選擇器。選擇剪貼簿項目會將其拷貝並貼到游標處；「表情符號」標籤頁會直接輸入表情符號。"
+          }
+        }
+      }
+    },
     "Open the Spotify app or another speaker to play audio.": {
       "localizations": {
         "en": {
@@ -54586,29 +54494,6 @@
         }
       }
     },
-    "Open the unified Sapphire picker right where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly. (The emoji shortcut opens the same panel on its Emoji tab.)": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open the unified Sapphire picker right where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly. (The emoji shortcut opens the same panel on its Emoji tab.)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用全局快捷键，在输入位置打开 Sapphire 统一选取面板。选择剪贴板项目会将其复制并粘贴到光标处；“表情符号”标签页会直接输入表情。（表情快捷键会打开同一面板的“表情符号”标签页。）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用全域快速鍵，在你輸入文字的位置直接打開統一的 Sapphire 選擇器。選擇剪貼簿項目會將其拷貝並貼到游標處；「表情符號」標籤頁會直接輸入表情符號。（表情符號快速鍵會打開同一個面板的「表情符號」標籤頁。）"
-          }
-        }
-      }
-    },
     "Open update page": {
       "comment": "Settings interface",
       "localizations": {
@@ -54655,24 +54540,24 @@
         }
       }
     },
-    "Opened Terminal to upgrade %@ — Homebrew needs your administrator password.": {
+    "Opened Terminal to upgrade %@. Homebrew needs your administrator password.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Opened Terminal to upgrade %@ — Homebrew needs your administrator password."
+            "value": "Opened Terminal to upgrade %@. Homebrew needs your administrator password."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已打开终端以升级 %@ — Homebrew 需要管理员密码。"
+            "value": "已打开终端以升级 %@。Homebrew 需要管理员密码。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已開啟終端機以升級 %@ — Homebrew 需要管理者密碼。"
+            "value": "已開啟終端機以升級 %@。Homebrew 需要管理者密碼。"
           }
         }
       }
@@ -54763,6 +54648,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "以觸控式軌跡板滑動打開小工具時。"
+          }
+        }
+      }
+    },
+    "Opens the picker on the Clipboard tab.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the picker on the Clipboard tab."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开选取面板的“剪贴板”标签页。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開選擇器的「剪貼簿」標籤頁。"
           }
         }
       }
@@ -56103,6 +56011,29 @@
         }
       }
     },
+    "Pauses charging when the battery temperature gets too high.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pauses charging when the battery temperature gets too high."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电池温度过高时暂停充电。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電池溫度過高時暫停充電。"
+          }
+        }
+      }
+    },
     "Pausing": {
       "localizations": {
         "en": {
@@ -56441,29 +56372,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "持續性動態"
-          }
-        }
-      }
-    },
-    "Personalize your experience. You can change these any time in Settings.": {
-      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Personalize your experience. You can change these any time in Settings."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按你的喜好设置，之后可随时在设置中更改。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "個人化你的體驗。你可以隨時在「設定」中更改這些項目。"
           }
         }
       }
@@ -57918,13 +57826,13 @@
         }
       }
     },
-    "Position your monitor about an arm's length away and adjust the angle of the screen so that the top it is at or slightly below eye level. This reduces strain on your neck and eyes.": {
+    "Position your monitor about an arm's length away and adjust the angle of the screen so that the top of the screen is at or slightly below eye level. This reduces strain on your neck and eyes.": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Position your monitor about an arm's length away and adjust the angle of the screen so that the top it is at or slightly below eye level. This reduces strain on your neck and eyes."
+            "value": "Position your monitor about an arm's length away and adjust the angle of the screen so that the top of the screen is at or slightly below eye level. This reduces strain on your neck and eyes."
           }
         },
         "zh-Hans": {
@@ -58146,6 +58054,29 @@
         }
       }
     },
+    "Prefer AirPlay over Spotify Devices": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer AirPlay over Spotify Devices"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "优先使用 AirPlay 而非 Spotify 设备"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "優先使用 AirPlay 而非 Spotify 裝置"
+          }
+        }
+      }
+    },
     "Prefer Team Logos": {
       "localizations": {
         "en": {
@@ -58164,29 +58095,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "優先使用球隊標誌"
-          }
-        }
-      }
-    },
-    "Prefer airplay over spotify devices": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prefer airplay over spotify devices"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "优先使用 AirPlay 而非 Spotify 设备"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "優先使用 AirPlay 而非 Spotify 裝置"
           }
         }
       }
@@ -58395,25 +58303,25 @@
         }
       }
     },
-    "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous / Next / Play are tap-only unless you assign a hold action below. When this is off, Previous/Next still seek while held.": {
+    "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous, Next, and Play only respond to taps unless you assign a hold action below. When this is off, holding Previous or Next still seeks.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous / Next / Play are tap-only unless you assign a hold action below. When this is off, Previous/Next still seek while held."
+            "value": "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous, Next, and Play only respond to taps unless you assign a hold action below. When this is off, holding Previous or Next still seeks."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "长按次要播放器按钮（队列、设备、喜欢、随机播放、循环播放）可执行替代操作。上一首、下一首和播放按钮默认仅响应轻点，除非在下方指定长按操作。关闭此选项后，长按上一首或下一首仍可快退或快进。"
+            "value": "长按次要播放器按钮（队列、设备、喜欢、随机播放、循环播放）可执行替代操作。除非在下方指定长按操作，否则上一首、下一首和播放按钮仅响应轻点。关闭此选项后，长按上一首或下一首仍可快退或快进。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "按住次要播放器按鈕（待播清單、裝置、喜歡、隨機播放、重複播放）可執行替代動作。除非你在下方指定按住動作，否則「上一首」、「下一首」和「播放」僅支援點按。關閉此選項時，按住「上一首」／「下一首」仍可倒轉或快轉。"
+            "value": "按住次要播放器按鈕（待播清單、裝置、喜歡、隨機播放、重複播放）可執行替代動作。除非你在下方指定按住動作，否則「上一首」、「下一首」和「播放」僅支援點按。關閉此選項時，按住「上一首」或「下一首」仍可倒轉或快轉。"
           }
         }
       }
@@ -58871,6 +58779,29 @@
         }
       }
     },
+    "Privacy": {
+      "comment": "User-facing Sapphire interface text. Keep product names and interpolated user content unchanged.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱私"
+          }
+        }
+      }
+    },
     "Private API": {
       "localizations": {
         "en": {
@@ -59049,29 +58980,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "保護結束與關閉快速鍵"
-          }
-        }
-      }
-    },
-    "Protect your battery's health and extend its lifespan with these features.": {
-      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Protect your battery's health and extend its lifespan with these features."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用这些功能保护电池健康，延长电池寿命。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用這些功能保護電池健康度並延長其壽命。"
           }
         }
       }
@@ -59370,25 +59278,25 @@
         }
       }
     },
-    "Put the display into real macOS display sleep when the lid drops below the chosen angle, then wake it again when reopened. This will attempt to keep caffinate activated while the display is sleeping.": {
+    "Put the display to sleep when the lid drops below the chosen angle, and wake it when the lid reopens. Sapphire tries to keep caffeinate on while the display sleeps.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Put the display into real macOS display sleep when the lid drops below the chosen angle, then wake it again when reopened. This will attempt to keep caffinate activated while the display is sleeping."
+            "value": "Put the display to sleep when the lid drops below the chosen angle, and wake it when the lid reopens. Sapphire tries to keep caffeinate on while the display sleeps."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "屏幕开合角度低于设定值时，让显示器进入 macOS 显示器睡眠；重新打开时唤醒。显示器睡眠期间会尝试继续保持系统唤醒。"
+            "value": "屏幕开合角度低于设定值时让显示器进入睡眠，重新打开时唤醒。显示器睡眠期间，Sapphire 会尝试继续保持唤醒。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "當螢幕開合角度低於所選角度時，讓顯示器進入真正的 macOS 顯示器睡眠，重新打開時再喚醒。顯示器睡眠期間會嘗試維持保持喚醒狀態。"
+            "value": "當螢幕開合角度低於所選角度時讓顯示器進入睡眠，重新打開時再喚醒。顯示器睡眠期間，Sapphire 會嘗試維持保持喚醒。"
           }
         }
       }
@@ -59936,29 +59844,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "雨聲"
-          }
-        }
-      }
-    },
-    "Raising the Clear Bass slider or the low EQ bands adds level below ~150 Hz and can clip into audible distortion. Ease off if it sounds crunchy.": {
-      "comment": "Native local UI wording in DeviceEQView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Raising the Clear Bass slider or the low EQ bands adds level below ~150 Hz and can clip into audible distortion. Ease off if it sounds crunchy."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "提高清晰低音滑块或低频段，会增强约 150 Hz 以下的音量，可能产生削波失真。若出现破音，请降低增益。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "調高「清晰低音」滑桿或低頻 EQ 頻段會增加約 150 Hz 以下的音量，可能造成削波而產生明顯失真。若聽起來有破音，請調低一些。"
           }
         }
       }
@@ -61032,25 +60917,25 @@
         }
       }
     },
-    "Registration Complete!": {
+    "Registration Complete": {
       "comment": "Runtime user-facing string",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Registration Complete!"
+            "value": "Registration Complete"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "录入完成！"
+            "value": "录入完成"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "註冊完成！"
+            "value": "註冊完成"
           }
         }
       }
@@ -63375,25 +63260,25 @@
         }
       }
     },
-    "Reveal hidden menu bar items when a condition is met — battery level, active Focus, Wi-Fi network, or a script's exit code — and bind profiles to displays, Spaces, or Focus filters.": {
+    "Reveal hidden menu bar items based on battery level, Focus, Wi-Fi network, or a script's exit code, and bind profiles to displays, Spaces, or Focus filters.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reveal hidden menu bar items when a condition is met — battery level, active Focus, Wi-Fi network, or a script's exit code — and bind profiles to displays, Spaces, or Focus filters."
+            "value": "Reveal hidden menu bar items based on battery level, Focus, Wi-Fi network, or a script's exit code, and bind profiles to displays, Spaces, or Focus filters."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "满足电量、当前专注模式、Wi-Fi 网络或脚本退出码等条件时，显示隐藏的菜单栏项目；还可将方案绑定到显示器、桌面空间或专注模式过滤条件。"
+            "value": "根据电量、专注模式、Wi-Fi 网络或脚本退出码显示隐藏的菜单栏项目，并可将方案绑定到显示器、桌面空间或专注模式过滤条件。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在符合條件時顯示隱藏的選單列項目（電池電量、目前專注模式、Wi-Fi 網路或腳本的結束代碼），並將設定組綁定至顯示器、空間或專注模式過濾條件。"
+            "value": "根據電池電量、專注模式、Wi-Fi 網路或腳本的結束代碼顯示隱藏的選單列項目，並可將設定組綁定至顯示器、空間或專注模式過濾條件。"
           }
         }
       }
@@ -64935,6 +64820,29 @@
         }
       }
     },
+    "Sapphire collects anonymous, aggregated usage data to find bugs and see which features are used.": {
+      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire collects anonymous, aggregated usage data to find bugs and see which features are used."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 会收集匿名的汇总使用数据，用于发现问题并了解哪些功能被使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 會收集匿名的彙總使用資料，用於發現問題並了解哪些功能有被使用。"
+          }
+        }
+      }
+    },
     "Sapphire does not permanently delete items that are already in Trash. Review or empty Trash in Finder.": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
@@ -65094,6 +65002,29 @@
         }
       }
     },
+    "Sapphire needs Screen Recording permission to adjust volume and EQ for each app.": {
+      "comment": "Native local UI wording in MultiAudioView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs Screen Recording permission to adjust volume and EQ for each app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要屏幕录制权限才能调整每个应用的音量和均衡器。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要「螢幕錄製」權限，才能調整每個 App 的音量和 EQ。"
+          }
+        }
+      }
+    },
     "Sapphire needs a few permissions for its core features.": {
       "comment": "User-facing Sapphire interface text. Keep product names and interpolated user content unchanged.",
       "localizations": {
@@ -65208,25 +65139,25 @@
         }
       }
     },
-    "Sapphire watches your own processes — nothing is read from inside an app, no accessibility permission is used, and nothing leaves the Mac.\n\nTools that only exist while they run (xcodebuild, cargo, gradle, npm run build, a command you typed) are detected the moment they start. Tools that stay resident between turns (Claude, Codex, an editor's built-in agent, a Gradle daemon) are reported only while they are actually working, which is why sensitivity exists.": {
+    "Sapphire watches your own processes. Nothing is read from inside an app, no accessibility permission is used, and nothing leaves the Mac.\n\nTools that only exist while they run (xcodebuild, cargo, gradle, npm run build, a command you typed) are detected the moment they start. Tools that stay resident between turns (Claude, Codex, an editor's built-in agent, a Gradle daemon) are reported only while they are working. Sensitivity sets how much activity counts as working.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sapphire watches your own processes — nothing is read from inside an app, no accessibility permission is used, and nothing leaves the Mac.\n\nTools that only exist while they run (xcodebuild, cargo, gradle, npm run build, a command you typed) are detected the moment they start. Tools that stay resident between turns (Claude, Codex, an editor's built-in agent, a Gradle daemon) are reported only while they are actually working, which is why sensitivity exists."
+            "value": "Sapphire watches your own processes. Nothing is read from inside an app, no accessibility permission is used, and nothing leaves the Mac.\n\nTools that only exist while they run (xcodebuild, cargo, gradle, npm run build, a command you typed) are detected the moment they start. Tools that stay resident between turns (Claude, Codex, an editor's built-in agent, a Gradle daemon) are reported only while they are working. Sensitivity sets how much activity counts as working."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sapphire 仅查看属于你的进程，不读取应用内部内容，不使用辅助功能权限，也不会将信息发送到 Mac 之外。\n\n仅在任务运行时存在的工具（xcodebuild、cargo、gradle、npm run build 或你输入的命令）会在启动时立即被检测。轮次之间仍常驻的工具（Claude、Codex、编辑器内置智能体或 Gradle 守护进程）仅在实际工作时报告活动，因此提供了灵敏度设置。"
+            "value": "Sapphire 仅查看属于你的进程，不读取应用内部内容，不使用辅助功能权限，也不会将信息发送到 Mac 之外。\n\n仅在任务运行时存在的工具（xcodebuild、cargo、gradle、npm run build 或你输入的命令）会在启动时立即被检测。轮次之间仍常驻的工具（Claude、Codex、编辑器内置智能体或 Gradle 守护进程）仅在工作时报告活动。灵敏度决定多少活动算作工作。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sapphire 只會監看你自己的程序，不會讀取 App 內部的任何內容、不使用輔助使用權限，也不會有任何資料離開這台 Mac。\n\n只在執行期間存在的工具（xcodebuild、cargo、gradle、npm run build、你輸入的指令）會在啟動時立即偵測到。在回合之間持續常駐的工具（Claude、Codex、編輯器內建的代理程式、Gradle 常駐程式）只有在實際運作時才會回報，這就是提供靈敏度設定的原因。"
+            "value": "Sapphire 只會監看你自己的程序，不會讀取 App 內部的任何內容、不使用輔助使用權限，也不會有任何資料離開這台 Mac。\n\n只在執行期間存在的工具（xcodebuild、cargo、gradle、npm run build、你輸入的指令）會在啟動時立即偵測到。在回合之間持續常駐的工具（Claude、Codex、編輯器內建的代理程式、Gradle 常駐程式）只有在運作時才會回報。靈敏度決定多少活動算作運作中。"
           }
         }
       }
@@ -66773,13 +66704,13 @@
         }
       }
     },
-    "See exactly what is using space, trace what changed, and reclaim it safely.": {
+    "See what is using space, trace what changed, and reclaim it safely.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "See exactly what is using space, trace what changed, and reclaim it safely."
+            "value": "See what is using space, trace what changed, and reclaim it safely."
           }
         },
         "zh-Hans": {
@@ -66791,7 +66722,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "精確查看佔用空間的項目、追蹤變更內容，並安全地釋放空間。"
+            "value": "查看佔用空間的項目、追蹤變更內容，並安全地釋放空間。"
           }
         }
       }
@@ -67229,25 +67160,25 @@
         }
       }
     },
-    "Select your primary music player for the best integration.": {
+    "Select your primary music player.": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Select your primary music player for the best integration."
+            "value": "Select your primary music player."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择主要音乐播放器以获得更好的集成体验。"
+            "value": "选择你的主要音乐播放器。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "選擇你的主要音樂播放程式，以獲得最佳整合效果。"
+            "value": "選擇你的主要音樂播放程式。"
           }
         }
       }
@@ -67478,25 +67409,25 @@
         }
       }
     },
-    "Send anonymous usage events to Google to help improve Sapphire. Disable this to opt out of analytics collection.": {
+    "Send anonymous usage events to Google to help improve Sapphire.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send anonymous usage events to Google to help improve Sapphire. Disable this to opt out of analytics collection."
+            "value": "Send anonymous usage events to Google to help improve Sapphire."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "向 Google 发送匿名使用事件，帮助改进 Sapphire。关闭此选项可退出分析数据收集。"
+            "value": "向 Google 发送匿名使用事件，帮助改进 Sapphire。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "傳送匿名使用事件給 Google，協助改善 Sapphire。關閉此選項即可停止分析資料收集。"
+            "value": "傳送匿名使用事件給 Google，協助改善 Sapphire。"
           }
         }
       }
@@ -68864,6 +68795,52 @@
         }
       }
     },
+    "Show Compact Battery Live Activity": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Compact Battery Live Activity"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示简洁的电池实时活动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示精簡的電池即時動態"
+          }
+        }
+      }
+    },
+    "Show Compact Focus Live Activity Text": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Compact Focus Live Activity Text"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示简洁的专注实时活动文本"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示精簡的專注即時動態文字"
+          }
+        }
+      }
+    },
     "Show Confirmation Hint": {
       "localizations": {
         "en": {
@@ -69866,6 +69843,29 @@
         }
       }
     },
+    "Show Track Info on Track Change": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Track Info on Track Change"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换歌曲时显示歌曲信息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切換曲目時顯示曲目資訊"
+          }
+        }
+      }
+    },
     "Show Transfers in the Notch": {
       "localizations": {
         "en": {
@@ -69884,6 +69884,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "在瀏海區域顯示傳輸"
+          }
+        }
+      }
+    },
+    "Show a button to turn on Low Power Mode when your battery gets low.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show a button to turn on Low Power Mode when your battery gets low."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电量不足时显示按钮，用于开启低电量模式。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電池電量偏低時顯示按鈕，用於開啟低耗電模式。"
           }
         }
       }
@@ -69907,29 +69930,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "當藝人在附近有演唱會時，顯示精簡的購票按鈕。"
-          }
-        }
-      }
-    },
-    "Show a convenient button to enable Low Power Mode when your battery gets low.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show a convenient button to enable Low Power Mode when your battery gets low."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "电量不足时显示快捷按钮，以便启用低电量模式。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "電池電量偏低時顯示便捷按鈕，以啟用低耗電模式。"
           }
         }
       }
@@ -70231,52 +70231,6 @@
         }
       }
     },
-    "Show compact battery live activity": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show compact battery live activity"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示简洁的电池实时活动"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顯示精簡的電池即時動態"
-          }
-        }
-      }
-    },
-    "Show compact focus live activity text": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show compact focus live activity text"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示简洁的专注实时活动文本"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顯示精簡的專注即時動態文字"
-          }
-        }
-      }
-    },
     "Show connection, disconnection, and battery events for Bluetooth devices.": {
       "comment": "Settings interface",
       "localizations": {
@@ -70570,6 +70524,29 @@
         }
       }
     },
+    "Show live activities and widgets in the notch on the lock screen.": {
+      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show live activities and widgets in the notch on the lock screen."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在锁定屏幕的刘海区域显示实时活动和小组件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在鎖定畫面的瀏海區域顯示即時動態和小工具。"
+          }
+        }
+      }
+    },
     "Show live activity events for Apple devices like iPhone, iPad, Mac, and Apple Watch.": {
       "comment": "Settings interface",
       "localizations": {
@@ -70792,6 +70769,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "一次顯示一個佈局，依你的預設或個別 App 設定而定。"
+          }
+        }
+      }
+    },
+    "Show only the icon instead of the full state.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show only the icon instead of the full state."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示图标，不显示完整状态。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "僅顯示圖像，不顯示完整狀態。"
+          }
+        }
+      }
+    },
+    "Show only whether Focus is on or off, not its name.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show only whether Focus is on or off, not its name."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示专注模式是否开启，不显示其名称。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "僅顯示專注模式是否開啟，不顯示其名稱。"
           }
         }
       }
@@ -71425,47 +71448,24 @@
         }
       }
     },
-    "Show title and artist next to the album art. Phone only is the default — Mac music keeps the compact waveform.": {
+    "Show title and artist next to the album art. The default is Phone only, so Mac music keeps the compact waveform.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show title and artist next to the album art. Phone only is the default — Mac music keeps the compact waveform."
+            "value": "Show title and artist next to the album art. The default is Phone only, so Mac music keeps the compact waveform."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在专辑封面旁显示标题和艺人。默认仅用于手机媒体，Mac 音乐保留紧凑波形。"
+            "value": "在专辑封面旁显示标题和艺人。默认为“仅手机”，因此 Mac 音乐保留紧凑波形。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在專輯封面旁顯示標題與藝人。預設僅用於手機媒體，Mac 音樂保留精簡波形。"
-          }
-        }
-      }
-    },
-    "Show track info on Track Change": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show track info on Track Change"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "切换歌曲时显示歌曲信息"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "切換曲目時顯示曲目資訊"
+            "value": "在專輯封面旁顯示標題與藝人。預設為「僅手機」，因此 Mac 音樂保留精簡波形。"
           }
         }
       }
@@ -71920,25 +71920,25 @@
         }
       }
     },
-    "Sign in to Spotify below. Old sessions are cleared first so a revoked login cannot auto-complete.": {
+    "Sign in to Spotify below.": {
       "comment": "Compiler-extracted static interface text",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sign in to Spotify below. Old sessions are cleared first so a revoked login cannot auto-complete."
+            "value": "Sign in to Spotify below."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在下方登录 Spotify。系统会先清除旧会话，防止已撤销的登录自动完成。"
+            "value": "请在下方登录 Spotify。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請在下方登入 Spotify。會先清除舊的工作階段，以免已撤銷的登入自動完成。"
+            "value": "請在下方登入 Spotify。"
           }
         }
       }
@@ -72331,25 +72331,25 @@
         }
       }
     },
-    "Skip passwords and other concealed clipboard content (e.g., from 1Password, Bitwarden).": {
+    "Skip passwords and other concealed content from apps like 1Password and Bitwarden.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skip passwords and other concealed clipboard content (e.g., from 1Password, Bitwarden)."
+            "value": "Skip passwords and other concealed content from apps like 1Password and Bitwarden."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "跳过密码及其他隐藏的剪贴板内容，例如来自 1Password、Bitwarden 的内容。"
+            "value": "跳过来自 1Password、Bitwarden 等应用的密码及其他隐藏内容。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "略過密碼和其他隱藏的剪貼簿內容（例如來自 1Password、Bitwarden）。"
+            "value": "略過來自 1Password、Bitwarden 等 App 的密碼和其他隱藏內容。"
           }
         }
       }
@@ -72626,29 +72626,6 @@
         }
       }
     },
-    "Smart (when mouse leaves)": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Smart (when mouse leaves)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "智能（指针移开时）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "智慧（滑鼠離開時）"
-          }
-        }
-      }
-    },
     "Smart Inbox": {
       "comment": "Settings interface",
       "localizations": {
@@ -72736,29 +72713,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "平滑捲動"
-          }
-        }
-      }
-    },
-    "Smoothly changing the shape of a Live Activity.": {
-      "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Smoothly changing the shape of a Live Activity."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "实时活动平滑改变形状时。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "即時動態平滑變換形狀時。"
           }
         }
       }
@@ -75571,6 +75525,52 @@
         }
       }
     },
+    "Stop Charging When App Closed": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Charging When App Closed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用退出后停止充电"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App 關閉時停止充電"
+          }
+        }
+      }
+    },
+    "Stop Charging When Sleeping": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Charging When Sleeping"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "睡眠时停止充电"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "睡眠時停止充電"
+          }
+        }
+      }
+    },
     "Stop Discharge": {
       "comment": "Settings interface",
       "localizations": {
@@ -75680,52 +75680,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止相機"
-          }
-        }
-      }
-    },
-    "Stop charging when app closed": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stop charging when app closed"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "应用退出后停止充电"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App 關閉時停止充電"
-          }
-        }
-      }
-    },
-    "Stop charging when sleeping": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stop charging when sleeping"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "睡眠时停止充电"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "睡眠時停止充電"
           }
         }
       }
@@ -76548,25 +76502,25 @@
         }
       }
     },
-    "Succeeded!": {
+    "Succeeded": {
       "comment": "Runtime user-facing string",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Succeeded!"
+            "value": "Succeeded"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "成功！"
+            "value": "成功"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "成功！"
+            "value": "成功"
           }
         }
       }
@@ -77367,13 +77321,13 @@
         }
       }
     },
-    "Switching devices requires a Spotify Premium account or a private api login.": {
+    "Switching devices requires a Spotify Premium account or a Private API login.": {
       "comment": "Native local UI wording in MusicHubViews.swift",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Switching devices requires a Spotify Premium account or a private api login."
+            "value": "Switching devices requires a Spotify Premium account or a Private API login."
           }
         },
         "zh-Hans": {
@@ -78373,29 +78327,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "快速點一下 5 次以啟用除錯模式"
-          }
-        }
-      }
-    },
-    "Tap Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity.": {
-      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tap Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点击“安装辅助服务”，批准 macOS 提示，然后在“系统设置”→“通用”→“登录项”→“后台活动”中启用 Sapphire。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "點一下「安裝輔助服務」。核准 macOS 提示，然後在「系統設定」→「一般」→「登入項目」→「背景活動」中啟用 Sapphire。"
           }
         }
       }
@@ -79648,13 +79579,13 @@
         }
       }
     },
-    "The helper is approved but not responding. Tap Reset Helper so Sapphire can unregister its own background items and reinstall the helper.": {
+    "The helper is approved but not responding. Click Reset Helper so Sapphire can unregister its own background items and reinstall the helper.": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The helper is approved but not responding. Tap Reset Helper so Sapphire can unregister its own background items and reinstall the helper."
+            "value": "The helper is approved but not responding. Click Reset Helper so Sapphire can unregister its own background items and reinstall the helper."
           }
         },
         "zh-Hans": {
@@ -81358,29 +81289,6 @@
         }
       }
     },
-    "This feature works best on devices with XDR displays (14in and 16in Macbook Pro's and Pro Display XDR). M4 Macbook Pro's already display this behaviour in bright environments like in direct sunlight, this feature will allow you to do it in any type of environment.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This feature works best on devices with XDR displays (14in and 16in Macbook Pro's and Pro Display XDR). M4 Macbook Pro's already display this behaviour in bright environments like in direct sunlight, this feature will allow you to do it in any type of environment."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此功能最适合配备 XDR 显示屏的设备（14 英寸和 16 英寸 MacBook Pro 以及 Pro Display XDR）。M4 MacBook Pro 在直射阳光等明亮环境中已具备此行为；本功能可让你在任何环境下使用。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此功能在配備 XDR 顯示器的裝置上效果最佳（14 吋與 16 吋 MacBook Pro 及 Pro Display XDR）。M4 MacBook Pro 在陽光直射等明亮環境下已有此表現，此功能可讓你在任何環境下都能達到相同效果。"
-          }
-        }
-      }
-    },
     "This identifier may be shared or could not be verified — review before removing": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
@@ -81768,13 +81676,13 @@
         }
       }
     },
-    "Thunderstorm w/ Hail": {
+    "Thunderstorm with Hail": {
       "comment": "Runtime user-facing string",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thunderstorm w/ Hail"
+            "value": "Thunderstorm with Hail"
           }
         },
         "zh-Hans": {
@@ -82291,6 +82199,29 @@
         }
       }
     },
+    "To bind to any Focus filter, turn on Focus and leave every filter unchecked.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To bind to any Focus filter, turn on Focus and leave every filter unchecked."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "若要绑定到任意专注模式过滤条件，请开启“专注”并保持所有过滤条件未勾选。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "若要綁定任何專注模式過濾條件，請開啟「專注模式」並保持所有過濾條件未勾選。"
+          }
+        }
+      }
+    },
     "To control playback with a free account, please open the Spotify desktop app first.": {
       "comment": "Native local UI wording in MusicHubViews.swift",
       "localizations": {
@@ -82402,29 +82333,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "若要啟用 Spotify 整合，請在 Sapphire 設定中加入你的 API 憑證。"
-          }
-        }
-      }
-    },
-    "To improve Sapphire, we collect completely anonymous, aggregated usage data. This helps us understand which features are popular, identify bugs, and make the app better for everyone.": {
-      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "To improve Sapphire, we collect completely anonymous, aggregated usage data. This helps us understand which features are popular, identify bugs, and make the app better for everyone."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "为了改进 Sapphire，我们会收集完全匿名的汇总使用数据。这有助于了解常用功能、发现问题，并为所有用户改进应用。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "為了改善 Sapphire，我們會收集完全匿名的彙總使用資料。這有助於了解常用功能、發現問題，並為所有使用者改善 App。"
           }
         }
       }
@@ -83563,29 +83471,6 @@
         }
       }
     },
-    "Try the picker right now — it opens on the Clipboard tab.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Try the picker right now — it opens on the Clipboard tab."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "立即试用选取面板，默认打开“剪贴板”标签页。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "立即試用選擇器，它會開啟在「剪貼簿」標籤頁。"
-          }
-        }
-      }
-    },
     "Tue": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
@@ -83968,25 +83853,25 @@
         }
       }
     },
-    "Type a new name, then press Return or tap .": {
+    "Type a new name, then press Return.": {
       "comment": "Native local UI wording in FileActionView.swift",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Type a new name, then press Return or tap ."
+            "value": "Type a new name, then press Return."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "输入新名称，然后按回车键或点击。"
+            "value": "输入新名称，然后按回车键。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "輸入新名稱，然後按下 Return 或點一下 。"
+            "value": "輸入新名稱，然後按下 Return。"
           }
         }
       }
@@ -85583,6 +85468,28 @@
         }
       }
     },
+    "Update this app from its own row. Batch updates skip it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update this app from its own row. Batch updates skip it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在对应行单独更新此应用，批量更新会跳过它。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請在對應列單獨更新此 App，批次更新會略過它。"
+          }
+        }
+      }
+    },
     "Updated %@h ago": {
       "comment": "Native local UI wording in WeatherDetailView.swift",
       "localizations": {
@@ -85648,28 +85555,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 分鐘前更新"
-          }
-        }
-      }
-    },
-    "Updated from its own row — not included in batch updates": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Updated from its own row — not included in batch updates"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请在对应行单独更新，不包含在批量更新中"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "請在對應列單獨更新，不包含在批次更新中"
           }
         }
       }
@@ -86018,13 +85903,13 @@
         }
       }
     },
-    "Use Night Shift on your mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep.": {
+    "Use Night Shift on your Mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep.": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use Night Shift on your mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep."
+            "value": "Use Night Shift on your Mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep."
           }
         },
         "zh-Hans": {
@@ -86196,29 +86081,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用球隊標誌代替簡稱。"
-          }
-        }
-      }
-    },
-    "Use the back control in the notch to return.": {
-      "comment": "Native local UI wording in MultiAudioView.swift, MusicHubViews.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use the back control in the notch to return."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用刘海区域的返回按钮返回。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用瀏海中的返回控制項即可返回。"
           }
         }
       }
@@ -86424,25 +86286,25 @@
         }
       }
     },
-    "Uses its own signed updater — Sapphire will open the app.": {
+    "Uses its own signed updater. Sapphire will open the app.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses its own signed updater — Sapphire will open the app."
+            "value": "Uses its own signed updater. Sapphire will open the app."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此应用使用自己的签名更新程序，Sapphire 将打开该应用。"
+            "value": "此应用使用自己的签名更新程序。Sapphire 将打开该应用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用其專屬的已簽署更新程式，Sapphire 將會打開該 App。"
+            "value": "使用其專屬的已簽署更新程式。Sapphire 將會打開該 App。"
           }
         }
       }
@@ -86652,25 +86514,25 @@
         }
       }
     },
-    "Version %@ is available!": {
+    "Version %@ is available.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Version %@ is available!"
+            "value": "Version %@ is available."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "版本 %@ 已发布！"
+            "value": "版本 %@ 已发布。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "版本 %@ 已推出！"
+            "value": "版本 %@ 已推出。"
           }
         }
       }
@@ -87702,25 +87564,25 @@
         }
       }
     },
-    "Watch Mail.app unread messages for verification codes (no AI).": {
+    "Watch unread messages in Mail for verification codes. Works without AI.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Watch Mail.app unread messages for verification codes (no AI)."
+            "value": "Watch unread messages in Mail for verification codes. Works without AI."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "监测“邮件”应用的未读邮件以查找验证码，不使用 AI。"
+            "value": "监测“邮件”中的未读邮件以查找验证码。无需 AI。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "監看「郵件」App 的未讀郵件以尋找驗證碼（不使用 AI）。"
+            "value": "監看「郵件」中的未讀郵件以尋找驗證碼。無需 AI。"
           }
         }
       }
@@ -87837,48 +87699,25 @@
         }
       }
     },
-    "We are committed to your privacy. We DO NOT automatically collect, store, or transmit any personal or sensitive information. This includes, but is not limited to:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps": {
+    "We don't automatically collect, store, or transmit any personal or sensitive information, including:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "We are committed to your privacy. We DO NOT automatically collect, store, or transmit any personal or sensitive information. This includes, but is not limited to:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps"
+            "value": "We don't automatically collect, store, or transmit any personal or sensitive information, including:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "我们承诺保护你的隐私，不会自动收集、存储或传输任何个人或敏感信息，包括但不限于：\n• 姓名、电子邮箱或其他个人标识\n• 屏幕内容或键盘输入\n• 其他应用的数据"
+            "value": "我们不会自动收集、存储或传输任何个人或敏感信息，包括：\n• 姓名、电子邮箱或其他个人标识\n• 屏幕内容或键盘输入\n• 其他应用的数据"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "我們承諾保護你的隱私，不會自動收集、儲存或傳輸任何個人或敏感資訊，包括但不限於：\n• 姓名、電子郵件或其他個人識別資訊\n• 螢幕內容或鍵盤輸入\n• 其他 App 的資料"
-          }
-        }
-      }
-    },
-    "We believe in transparency. Please review our data handling practices below.": {
-      "comment": "User-facing Sapphire interface text. Keep product names and interpolated user content unchanged.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "We believe in transparency. Please review our data handling practices below."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "我们坚持透明原则。请查看下面的数据处理说明。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "我們重視透明度。請檢視下方的資料處理方式。"
+            "value": "我們不會自動收集、儲存或傳輸任何個人或敏感資訊，包括：\n• 姓名、電子郵件或其他個人識別資訊\n• 螢幕內容或鍵盤輸入\n• 其他 App 的資料"
           }
         }
       }
@@ -88292,25 +88131,25 @@
         }
       }
     },
-    "What This Includes:": {
+    "What This Includes": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "What This Includes:"
+            "value": "What This Includes"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "包括以下内容："
+            "value": "包括以下内容"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "包括以下內容："
+            "value": "包括以下內容"
           }
         }
       }
@@ -88378,6 +88217,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "滾輪逐格平滑滑行，不再跳動。按住 ⌘、⌥、⌃ 或 ⇧ 時，捲動仍即時回應。"
+          }
+        }
+      }
+    },
+    "When Mouse Leaves": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When Mouse Leaves"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指针移开时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "滑鼠離開時"
           }
         }
       }
@@ -88539,25 +88401,25 @@
         }
       }
     },
-    "When another app is playing, show a Spotify source tab so you can switch medias. Hidden while Spotify itself is the main media source.": {
+    "When another app is playing, show a Spotify source tab so you can switch to Spotify. Hidden while Spotify is the main media source.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When another app is playing, show a Spotify source tab so you can switch medias. Hidden while Spotify itself is the main media source."
+            "value": "When another app is playing, show a Spotify source tab so you can switch to Spotify. Hidden while Spotify is the main media source."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "其他应用播放时显示 Spotify 来源标签页，以便切换媒体。Spotify 已是主要媒体来源时不显示。"
+            "value": "其他应用播放时显示 Spotify 来源标签页，以便切换到 Spotify。Spotify 是主要媒体来源时不显示。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "當其他 App 正在播放時，顯示 Spotify 來源標籤頁以便切換媒體。當 Spotify 本身為主要媒體來源時則隱藏。"
+            "value": "當其他 App 正在播放時，顯示 Spotify 來源標籤頁以便切換到 Spotify。當 Spotify 為主要媒體來源時則隱藏。"
           }
         }
       }
@@ -88648,6 +88510,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "連接多部手機時，每次鏡像或延伸都會讓你選擇裝置。其他功能使用首選（目前啟用的）手機，或在適用時同步到所有已連接手機（如剪貼簿、專注模式）。"
+          }
+        }
+      }
+    },
+    "When off, a snippet expands as soon as you finish typing its trigger.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When off, a snippet expands as soon as you finish typing its trigger."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭后，输入完触发词时文本片段会立即展开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉時，輸入完觸發字詞後文字片段會立即展開。"
           }
         }
       }
@@ -89934,6 +89819,29 @@
         }
       }
     },
+    "Works best on XDR displays, like the 14-inch and 16-inch MacBook Pro and Pro Display XDR. M4 MacBook Pro models already do this in bright light such as direct sunlight; this feature lets you do it anywhere.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works best on XDR displays, like the 14-inch and 16-inch MacBook Pro and Pro Display XDR. M4 MacBook Pro models already do this in bright light such as direct sunlight; this feature lets you do it anywhere."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最适合 XDR 显示屏，例如 14 英寸和 16 英寸 MacBook Pro 以及 Pro Display XDR。M4 MacBook Pro 在直射阳光等明亮环境中已会这样做；此功能让你在任何环境下都能使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最適合 XDR 顯示器，例如 14 吋與 16 吋 MacBook Pro 及 Pro Display XDR。M4 MacBook Pro 在陽光直射等明亮環境下已會這樣做；此功能可讓你在任何環境下使用。"
+          }
+        }
+      }
+    },
     "Written By": {
       "localizations": {
         "en": {
@@ -90115,25 +90023,25 @@
         }
       }
     },
-    "Xcode, Android Studio and Gradle, Swift, cargo, Go, npm and friends, make, Docker, and test runs.": {
+    "Xcode, Android Studio and Gradle, Swift, cargo, Go, npm, make, Docker, and test runs.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Xcode, Android Studio and Gradle, Swift, cargo, Go, npm and friends, make, Docker, and test runs."
+            "value": "Xcode, Android Studio and Gradle, Swift, cargo, Go, npm, make, Docker, and test runs."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Xcode、Android Studio 和 Gradle、Swift、cargo、Go、npm 等、make、Docker，以及测试任务。"
+            "value": "Xcode、Android Studio 和 Gradle、Swift、cargo、Go、npm、make、Docker，以及测试任务。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Xcode、Android Studio 和 Gradle、Swift、cargo、Go、npm 等、make、Docker，以及測試執行。"
+            "value": "Xcode、Android Studio 和 Gradle、Swift、cargo、Go、npm、make、Docker，以及測試執行。"
           }
         }
       }
@@ -90317,25 +90225,48 @@
         }
       }
     },
-    "You are up to date!": {
+    "You are up to date.": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You are up to date!"
+            "value": "You are up to date."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已是最新版本！"
+            "value": "已是最新版本。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "你已是最新版本！"
+            "value": "你已是最新版本。"
+          }
+        }
+      }
+    },
+    "You can change these any time in Settings.": {
+      "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can change these any time in Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "之后可随时在设置中更改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你可以隨時在「設定」中更改這些項目。"
           }
         }
       }
@@ -90478,25 +90409,25 @@
         }
       }
     },
-    "You're All Set!": {
+    "You're All Set": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You're All Set!"
+            "value": "You're All Set"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一切准备就绪！"
+            "value": "一切准备就绪"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "一切就緒！"
+            "value": "一切就緒"
           }
         }
       }
@@ -90520,6 +90451,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "你目前使用的是 Beta 版本。切換至「穩定版」即可安裝最新的穩定版本。"
+          }
+        }
+      }
+    },
+    "You're up to date.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You're up to date."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已是最新版本。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已是最新版本。"
           }
         }
       }
@@ -90724,29 +90677,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的個人代碼（無使用次數限制）："
-          }
-        }
-      }
-    },
-    "Your Privacy Matters": {
-      "comment": "User-facing Sapphire interface text. Keep product names and interpolated user content unchanged.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your Privacy Matters"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重视你的隐私"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的隱私很重要"
           }
         }
       }
@@ -91953,25 +91883,25 @@
         }
       }
     },
-    "exit =": {
+    "exit code": {
       "comment": "Settings interface",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "exit ="
+            "value": "exit code"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "退出码 ="
+            "value": "退出码"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "結束代碼 ="
+            "value": "結束代碼"
           }
         }
       }
@@ -92271,13 +92201,13 @@
         }
       }
     },
-    "macOS lost the helper registration (SAP-H3). Tap Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck.": {
+    "macOS lost the helper registration (SAP-H3). Click Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck.": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS lost the helper registration (SAP-H3). Tap Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck."
+            "value": "macOS lost the helper registration (SAP-H3). Click Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck."
           }
         },
         "zh-Hans": {
@@ -94373,25 +94303,25 @@
       },
       "shouldTranslate": false
     },
-    "• Feature usage frequency (e.g., how often a widget is used)\n• App version and macOS version\n• Anonymous crash reports": {
+    "• How often each feature is used\n• App version and macOS version\n• Anonymous crash reports": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "• Feature usage frequency (e.g., how often a widget is used)\n• App version and macOS version\n• Anonymous crash reports"
+            "value": "• How often each feature is used\n• App version and macOS version\n• Anonymous crash reports"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "• 功能使用频率（例如使用小组件的频率）\n• 应用版本和 macOS 版本\n• 匿名崩溃报告"
+            "value": "• 各项功能的使用频率\n• 应用版本和 macOS 版本\n• 匿名崩溃报告"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "• 功能使用頻率（例如小工具的使用頻率）\n• App 版本和 macOS 版本\n• 匿名當機報告"
+            "value": "• 各項功能的使用頻率\n• App 版本和 macOS 版本\n• 匿名當機報告"
           }
         }
       }

@@ -51,10 +51,7 @@ struct DevWidgetView: View {
         HStack(spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [Color(hue: 0.64, saturation: 0.40, brightness: 0.84), Color(hue: 0.64, saturation: 0.54, brightness: 0.58)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    ))
+                    .fill(Color(hue: 0.64, saturation: 0.47, brightness: 0.71))
                     .frame(width: 26, height: 26)
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: 10, weight: .bold))

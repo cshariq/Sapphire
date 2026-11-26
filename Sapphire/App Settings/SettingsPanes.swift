@@ -447,7 +447,7 @@ struct SystemEnhanceSettingsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 Text("System").font(.largeTitle.bold())
-                Text("Desktop motion, input, and window enhancements that stay out of your way.")
+                Text("Desktop motion, input, and window enhancements.")
                     .font(.subheadline).foregroundStyle(.secondary)
 
                 SystemEnhanceHingeAnimationSettingsCard()
@@ -1301,7 +1301,7 @@ private struct InstalledAppUpdateRowView: View {
                         }
                     }
                     if checker.canOpenManagedUpdater(for: entry) {
-                        Text("Uses its own signed updater — Sapphire will open the app.")
+                        Text("Uses its own signed updater. Sapphire will open the app.")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -1459,7 +1459,7 @@ struct StorageSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Storage")
                             .font(.largeTitle.bold())
-                        Text("See exactly what is using space, trace what changed, and reclaim it safely.")
+                        Text("See what is using space, trace what changed, and reclaim it safely.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -1684,7 +1684,7 @@ struct GeneralSettingsView: View {
                     ToggleRow(title: "Hide from Screen Sharing", description: "Never include Sapphire in screen sharing, screenshots, or screen recordings.", isOn: $settings.settings.hideFromScreenSharing)
                     Divider().padding(.leading, 20)
 
-                    ToggleRow(title: "Google Analytics", description: "Send anonymous usage events to Google to help improve Sapphire. Disable this to opt out of analytics collection.", isOn: $settings.settings.googleAnalyticsEnabled)
+                    ToggleRow(title: "Google Analytics", description: "Send anonymous usage events to Google to help improve Sapphire.", isOn: $settings.settings.googleAnalyticsEnabled)
                     Divider().padding(.leading, 20)
 
                     ToggleRow(
@@ -1783,7 +1783,7 @@ struct GeneralSettingsView: View {
                                 AnimationSliderRow(title: String(localized: "Activity Switch Response"), description: String(localized: "Transitioning between different Live Activities."), value: $settings.settings.customAnimationConfiguration.activityToActivityResponse, range: 0.1...1.0)
                                 AnimationSliderRow(title: String(localized: "Activity Switch Damping"), description: "", value: $settings.settings.customAnimationConfiguration.activityToActivityDamping, range: 0.4...1.0)
                                 Divider()
-                                AnimationSliderRow(title: String(localized: "Activity Morph Response"), description: String(localized: "Smoothly changing the shape of a Live Activity."), value: $settings.settings.customAnimationConfiguration.activityMorphResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Activity Morph Response"), description: String(localized: "Changing the shape of a Live Activity."), value: $settings.settings.customAnimationConfiguration.activityMorphResponse, range: 0.1...1.0)
                                 AnimationSliderRow(title: String(localized: "Activity Morph Damping"), description: "", value: $settings.settings.customAnimationConfiguration.activityMorphDamping, range: 0.4...1.0)
                             }
                         }
@@ -1882,7 +1882,7 @@ struct GeneralSettingsView: View {
         case .calm:
             return String(localized: "A slower, more graceful animation with a very gentle ease.")
         case .custom:
-            return String(localized: "Fine-tune every animation parameter to your exact liking.")
+            return String(localized: "Fine-tune every animation parameter.")
         }
     }
 }
@@ -2270,7 +2270,7 @@ struct ClipboardSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             PremiumFeatureView(feature: .clipboardPicker) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SettingsSectionHeader(title: "Quick Picker", description: "Open the unified Sapphire picker right where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly. (The emoji shortcut opens the same panel on its Emoji tab.)")
+                    SettingsSectionHeader(title: "Quick Picker", description: "Open the Sapphire picker where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly.")
 
                     ToggleRow(
                         title: "Enable Quick Picker",
@@ -2320,7 +2320,7 @@ struct ClipboardSettingsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Open Picker")
                                 .font(.system(size: 14, weight: .medium))
-                            Text("Try the picker right now — it opens on the Clipboard tab.")
+                            Text("Opens the picker on the Clipboard tab.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -2433,7 +2433,7 @@ struct ClipboardSettingsView: View {
 
                     ToggleRow(
                         title: "Ignore Concealed Items",
-                        description: "Skip passwords and other concealed clipboard content (e.g., from 1Password, Bitwarden).",
+                        description: "Skip passwords and other concealed content from apps like 1Password and Bitwarden.",
                         isOn: $settings.settings.clipboardIgnoreConcealedItems
                     )
 
@@ -2622,7 +2622,7 @@ struct ClipboardSettingsView: View {
                                 Divider().padding(.leading, 20)
                                 ToggleRow(
                                     title: "Expand After Space or Punctuation",
-                                    description: "Off expands the moment the trigger completes.",
+                                    description: "When off, a snippet expands as soon as you finish typing its trigger.",
                                     isOn: $settings.settings.snippetsExpandAfterSpace
                                 )
 
@@ -2668,7 +2668,7 @@ struct ClipboardSettingsView: View {
                                 }
 
                                 if settings.settings.snippetsList.isEmpty {
-                                    Text("No snippets yet — add one, then type its trigger in any app.")
+                                    Text("No snippets yet. Add one, then type its trigger in any app.")
                                         .font(.caption)
                                         .foregroundStyle(.tertiary)
                                         .padding(.horizontal)
@@ -2963,8 +2963,8 @@ struct LiveActivitiesSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("General Behavior").font(.headline).padding([.top, .horizontal])
                     ToggleRow(
-                          title: "Show compact focus live activity text",
-                          description: "Instead of showing the full focus name, only on/off.",
+                          title: "Show Compact Focus Live Activity Text",
+                          description: "Show only whether Focus is on or off, not its name.",
                           isOn: Binding(
                               get: { settings.settings.focusDisplayMode == .compact },
                               set: { settings.settings.focusDisplayMode = $0 ? .compact : .full }
@@ -2972,8 +2972,8 @@ struct LiveActivitiesSettingsView: View {
                       )
 
                     ToggleRow(
-                          title: "Show compact battery live activity",
-                          description: "Instead of showing the full state, only show icon.",
+                          title: "Show Compact Battery Live Activity",
+                          description: "Show only the icon instead of the full state.",
                           isOn: Binding(
                             get: { settings.settings.batteryNotificationStyle == .compact },
                             set: { settings.settings.batteryNotificationStyle = $0 ? .compact : .default }
@@ -5125,7 +5125,7 @@ struct NotificationsSettingsView: View {
 
                         ToggleRow(
                             title: "Scan Mail for OTP codes",
-                            description: "Watch Mail.app unread messages for verification codes (no AI).",
+                            description: "Watch unread messages in Mail for verification codes. Works without AI.",
                             isOn: $settings.settings.mailOTPDetectionEnabled
                         )
                     }
@@ -5141,7 +5141,7 @@ struct NotificationsSettingsView: View {
 
                         ToggleRow(
                             title: "Enable Smart Inbox",
-                            description: "AI-independent Mail features: OTP detection and parcel tracking.",
+                            description: "Detect verification codes and parcel tracking numbers in Mail without AI.",
                             isOn: $settings.settings.smartInboxEnabled
                         )
 
@@ -5149,7 +5149,7 @@ struct NotificationsSettingsView: View {
 
                         ToggleRow(
                             title: "Parcel tracking from email",
-                            description: "Detect UPS/FedEx/USPS/DHL/Amazon tracking numbers in Mail.",
+                            description: "Detect UPS, FedEx, USPS, DHL, and Amazon tracking numbers in Mail.",
                             isOn: $settings.settings.parcelTrackingEnabled
                         )
 
@@ -5577,7 +5577,7 @@ struct ProximityUnlockSettingsView: View {
                 range: 1...15,
                 specifier: String(localized: "%.0f sec")
             )
-            Text("Locks Face ID and requires your password after this much sustained clear spoof detection (not borderline frames).")
+            Text("Locks Face ID and requires your password when a spoof is clearly detected for this long.")
                 .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 4)
             Divider().padding(.leading, 20)
             CustomSliderRowView(
@@ -5991,7 +5991,7 @@ fileprivate struct CalibrateRSSIView: View {
     private var step1Near: some View {
         Image(systemName: "arrow.down.to.line.compact").font(.system(size: 40)).foregroundColor(.accentColor)
         Text("Step 1: Calibrate 'Near' Distance").font(.title2)
-        Text("Hold your device where you would normally use it when your Mac is unlocked (e.g., next to the trackpad).").multilineTextAlignment(.center).foregroundColor(.secondary)
+        Text("Hold your device where you would normally use it when your Mac is unlocked, such as next to the trackpad.").multilineTextAlignment(.center).foregroundColor(.secondary)
 
         let rssiString = currentDeviceRSSI.map { "\($0) dBm" } ?? "Waiting for signal..."
 
@@ -6591,7 +6591,7 @@ struct LidAngleCaffeineSettingsView: View {
             Divider().padding(.leading, 20)
             ToggleRow(
                 title: "Sleep display when nearly closed",
-                description: "Put the display into real macOS display sleep when the lid drops below the chosen angle, then wake it again when reopened. This will attempt to keep caffinate activated while the display is sleeping.",
+                description: "Put the display to sleep when the lid drops below the chosen angle, and wake it when the lid reopens. Sapphire tries to keep caffeinate on while the display sleeps.",
                 isOn: $settings.settings.lidAngleSleepDisplayEnabled
             )
 
@@ -6830,14 +6830,14 @@ struct HeroMetricsView: View {
             .fixedSize(horizontal: true, vertical: false)
 
             LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
-                MaterialStatChip(label: String(localized: "Time Remaining"), value: viewModel.timeRemaining, color: MaterialChartPalette.primary, icon: "clock.fill")
-                MaterialStatChip(label: String(localized: "Health"), value: "\(viewModel.maxCapacityPercentage)%", color: Color.pink, icon: "heart.fill")
-                MaterialStatChip(label: String(localized: "Cycles"), value: "\(viewModel.cycleCount)", color: MaterialChartPalette.secondary, icon: "arrow.triangle.2.circlepath")
-                MaterialStatChip(label: String(localized: "Temperature"), value: String(format: "%.1f°C", viewModel.temperature), color: MaterialChartPalette.error, icon: "thermometer.medium")
-                MaterialStatChip(label: String(localized: "Power"), value: String(format: "%.1f W", abs(viewModel.powerConsumption)), color: MaterialChartPalette.warning, icon: "bolt.fill")
-                MaterialStatChip(label: String(localized: "Voltage"), value: String(format: "%.2f V", viewModel.voltage / 1000.0), color: MaterialChartPalette.tertiary, icon: "wave.3.right")
-                MaterialStatChip(label: String(localized: "Current"), value: String(format: "%.2f A", Double(abs(viewModel.amperage)) / 1000.0), color: MaterialChartPalette.primary, icon: "arrow.left.arrow.right")
-                MaterialStatChip(label: String(localized: "Condition"), value: viewModel.health, color: .pink, icon: "heart.text.square")
+                MaterialStatChip(label: String(localized: "Time Remaining"), value: viewModel.timeRemaining, color: .secondary, icon: "clock.fill")
+                MaterialStatChip(label: String(localized: "Health"), value: "\(viewModel.maxCapacityPercentage)%", color: .secondary, icon: "heart.fill")
+                MaterialStatChip(label: String(localized: "Cycles"), value: "\(viewModel.cycleCount)", color: .secondary, icon: "arrow.triangle.2.circlepath")
+                MaterialStatChip(label: String(localized: "Temperature"), value: String(format: "%.1f°C", viewModel.temperature), color: .secondary, icon: "thermometer.medium")
+                MaterialStatChip(label: String(localized: "Power"), value: String(format: "%.1f W", abs(viewModel.powerConsumption)), color: .secondary, icon: "bolt.fill")
+                MaterialStatChip(label: String(localized: "Voltage"), value: String(format: "%.2f V", viewModel.voltage / 1000.0), color: .secondary, icon: "wave.3.right")
+                MaterialStatChip(label: String(localized: "Current"), value: String(format: "%.2f A", Double(abs(viewModel.amperage)) / 1000.0), color: .secondary, icon: "arrow.left.arrow.right")
+                MaterialStatChip(label: String(localized: "Condition"), value: viewModel.health, color: .secondary, icon: "heart.text.square")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -7510,14 +7510,14 @@ struct BatteryHistoryView: View {
                 if let stats = summaryStats {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
-                            StatPill(label: String(localized: "Min"), value: "\(stats.min)%", color: MaterialChartPalette.warning)
-                            StatPill(label: String(localized: "Avg"), value: "\(stats.avg)%", color: MaterialChartPalette.primary)
-                            StatPill(label: String(localized: "Max"), value: "\(stats.max)%", color: MaterialChartPalette.tertiary)
+                            StatPill(label: String(localized: "Min"), value: "\(stats.min)%", color: .primary)
+                            StatPill(label: String(localized: "Avg"), value: "\(stats.avg)%", color: .primary)
+                            StatPill(label: String(localized: "Max"), value: "\(stats.max)%", color: .primary)
                             if stats.avgTemp > 0 {
-                                StatPill(label: String(localized: "Temp"), value: String(format: "%.0f°", stats.avgTemp), color: MaterialChartPalette.error)
+                                StatPill(label: String(localized: "Temp"), value: String(format: "%.0f°", stats.avgTemp), color: .primary)
                             }
                             if stats.avgPower > 0 {
-                                StatPill(label: String(localized: "Draw"), value: String(format: "%.1fW", stats.avgPower), color: MaterialChartPalette.warning)
+                                StatPill(label: String(localized: "Draw"), value: String(format: "%.1fW", stats.avgPower), color: .primary)
                             }
                         }
                     }
@@ -7567,7 +7567,7 @@ struct BatteryHistoryView: View {
             legendChip(label: String(localized: "On Battery"), color: MaterialChartPalette.warning)
             legendChip(label: String(localized: "Low"), color: MaterialChartPalette.error)
             Spacer(minLength: 0)
-            Text("Line color = status")
+            Text("Line color shows status")
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(MaterialChartPalette.onSurfaceVariant.opacity(0.75))
         }
@@ -8156,7 +8156,7 @@ struct BatteryConfigurationView: View {
             Divider().padding(.leading, 20)
             ToggleRow(title: "Play Sound for Low Battery Alert", description: "Get an audible alert when your battery is running low.", isOn: $settings.settings.lowBatteryNotificationSoundEnabled)
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Prompt to Turn on Low Power Mode", description: "Show a convenient button to enable Low Power Mode when your battery gets low.", isOn: $settings.settings.promptForLowPowerMode)
+            ToggleRow(title: "Prompt to Turn on Low Power Mode", description: "Show a button to turn on Low Power Mode when your battery gets low.", isOn: $settings.settings.promptForLowPowerMode)
             Divider().padding(.leading, 20)
             ToggleRow(title: "Show Estimated Time Remaining", description: "Display the estimated time to full (when charging) or time to empty (when on battery) in the live activity.", isOn: $settings.settings.showEstimatedBatteryTime)
         }.modifier(SettingsContainerModifier())
@@ -8192,7 +8192,7 @@ struct BatteryConfigurationView: View {
                  CustomSliderRowView(label: "Resume charging below", value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }), range: 5...20, specifier: String(localized: "%.0f%% below limit"))
             }
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Heat Protection", description: "Automatically pauses charging if the battery temperature gets too high to prevent heat-related damage and extend its lifespan.", isOn: $settings.settings.heatProtectionEnabled)
+            ToggleRow(title: "Heat Protection", description: "Pauses charging when the battery temperature gets too high.", isOn: $settings.settings.heatProtectionEnabled)
             if settings.settings.heatProtectionEnabled {
                  CustomSliderRowView(label: "Pause charging above", value: $settings.settings.heatProtectionThreshold, range: 35...50, specifier: "%.0f °C")
             }
@@ -8215,16 +8215,16 @@ struct BatteryConfigurationView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Charging & Sleep").font(.headline).padding([.top, .horizontal])
             InfoContainer(text: "Although functionality is in place to keep the battery management functinal even when the device is sleeping it may not always work. Use these settings if you want to be certain of the behaviour when the device is sleeping.", iconName: "info.circle", color: .yellow).padding()
-            ToggleRow(title: "Stop charging when sleeping", description: "Prevents your Mac from sitting at 100% charge overnight, which can degrade the battery over time. Charging resumes on wake.", isOn: $settings.settings.stopChargingWhenSleeping)
+            ToggleRow(title: "Stop Charging When Sleeping", description: "Prevents your Mac from sitting at 100% charge overnight, which can degrade the battery over time. Charging resumes on wake.", isOn: $settings.settings.stopChargingWhenSleeping)
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Log battery during sleep", description: "Wakes the Mac briefly (display stays off) at a set interval to record battery state and re-assert your charge limit overnight. Sleep is never disabled.", isOn: $settings.settings.logBatteryDuringSleep)
+            ToggleRow(title: "Log Battery During Sleep", description: "Wakes the Mac briefly (display stays off) at a set interval to record battery state and re-assert your charge limit overnight. Sleep is never disabled.", isOn: $settings.settings.logBatteryDuringSleep)
             if settings.settings.logBatteryDuringSleep {
                 CustomSliderRowView(label: "Log every", value: Binding(get: { Double(settings.settings.sleepLoggingIntervalMinutes) }, set: { settings.settings.sleepLoggingIntervalMinutes = Int($0) }), range: 15...120, specifier: String(localized: "%.0f min"))
             }
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Stop charging when app closed", description: "The helper tool ensures your charging rules are still applied even if the Sapphire app isn't running.", isOn: .constant(true)).disabled(true)
+            ToggleRow(title: "Stop Charging When App Closed", description: "The helper tool ensures your charging rules are still applied even if the Sapphire app isn't running.", isOn: .constant(true)).disabled(true)
             Divider().padding(.leading, 20)
-            ToggleRow(title: "Disable Sleep until Charge Limit", description: "Keeps your Mac awake to ensure it reaches the charge limit, useful for 'top-up' schedules before you need to leave.", isOn: $settings.settings.disableSleepUntilChargeLimit)
+            ToggleRow(title: "Disable Sleep Until Charge Limit", description: "Keeps your Mac awake to ensure it reaches the charge limit, useful for 'top-up' schedules before you need to leave.", isOn: $settings.settings.disableSleepUntilChargeLimit)
         }.modifier(SettingsContainerModifier())
     }
 
@@ -8866,10 +8866,10 @@ struct HUDSettingsView: View {
                                 .foregroundColor(.yellow)
                                 .padding(.top, 4)
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("Apple limits brightness to preserve battery life. While this feature is system-controlled and there are no known side-effects, you should use this feature at your own risk.")
+                                Text("Apple limits brightness to preserve battery life. There are no known side effects, but use this feature at your own risk.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text("This feature works best on devices with XDR displays (14in and 16in Macbook Pro's and Pro Display XDR). M4 Macbook Pro's already display this behaviour in bright environments like in direct sunlight, this feature will allow you to do it in any type of environment.")
+                                Text("Works best on XDR displays, like the 14-inch and 16-inch MacBook Pro and Pro Display XDR. M4 MacBook Pro models already do this in bright light such as direct sunlight; this feature lets you do it anywhere.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -8992,7 +8992,7 @@ struct MusicSettingsView: View {
                     Text("Hold Actions").font(.headline).padding([.top, .horizontal])
                     ToggleRow(
                         title: "Enable Hold Actions",
-                        description: "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous / Next / Play are tap-only unless you assign a hold action below. When this is off, Previous/Next still seek while held.",
+                        description: "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous, Next, and Play only respond to taps unless you assign a hold action below. When this is off, holding Previous or Next still seeks.",
                         isOn: $settings.settings.musicLongPressActionsEnabled
                     )
                     if settings.settings.musicLongPressActionsEnabled {
@@ -9038,7 +9038,7 @@ struct MusicSettingsView: View {
                     Text("Live Activity").font(.headline).padding([.top, .horizontal])
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Right-side track info")
-                        Text("Show title and artist next to the album art. Phone only is the default — Mac music keeps the compact waveform.")
+                        Text("Show title and artist next to the album art. The default is Phone only, so Mac music keeps the compact waveform.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Picker("", selection: $settings.settings.musicLiveActivityRightTextMode) {
@@ -9096,7 +9096,7 @@ struct MusicSettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Waveform style")
-                            Text("Classic is the bar waveform. Continuity is the SF Symbol used by the old phone media activity.")
+                            Text("Classic is the bar waveform. Continuity is the icon from the old phone media activity.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -9121,9 +9121,9 @@ struct MusicSettingsView: View {
                 .modifier(SettingsContainerModifier())
 
                 VStack(spacing: 0) {
-                    ToggleRow(title: "Enable track info on Hover", description: "Hover over the album art in the live activity to see the song title.", isOn: $settings.settings.enableQuickPeekOnHover)
+                    ToggleRow(title: "Enable Track Info on Hover", description: "Hover over the album art in the live activity to see the song title.", isOn: $settings.settings.enableQuickPeekOnHover)
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Show track info on Track Change", description: "Briefly show the song title when a new track begins.", isOn: $settings.settings.showQuickPeekOnTrackChange)
+                    ToggleRow(title: "Show Track Info on Track Change", description: "Briefly show the song title when a new track begins.", isOn: $settings.settings.showQuickPeekOnTrackChange)
                 }.modifier(SettingsContainerModifier())
                 case .features:
                 MusicPlayerFeaturesCard(isSpotifyAvailable: isPrivateAuth)
@@ -9163,7 +9163,7 @@ struct MusicSettingsView: View {
                                 }.padding()
                                 Divider().padding(.leading, 20)
                                 ToggleRow(title: "Skip Ads", description: "When Spotify desktop on this Mac plays an ad, relaunch it in the background, then resume via Spotify Connect.", isOn: $settings.settings.skipSpotifyAd)
-                                ToggleRow(title: "Show Spotify Tab", description: "When another app is playing, show a Spotify source tab so you can switch medias. Hidden while Spotify itself is the main media source.", isOn: $settings.settings.showSpotifySourceTab)
+                                ToggleRow(title: "Show Spotify Tab", description: "When another app is playing, show a Spotify source tab so you can switch to Spotify. Hidden while Spotify is the main media source.", isOn: $settings.settings.showSpotifySourceTab)
                                     .disabled(!isPrivateAuth)
                                 ToggleRow(title: "Live Canvas Video", description: "Show looping Spotify Canvas video behind the artwork when available. Turn off to always use the album thumbnail.", isOn: $settings.settings.spotifyCanvasLiveVideo)
                                     .disabled(!isPrivateAuth)
@@ -9257,7 +9257,7 @@ struct MusicSettingsView: View {
                 .animation(.default, value: isTidalAuth)
 
                 VStack(spacing: 0) {
-                    ToggleRow(title: "Prefer airplay over spotify devices", description: "Default to airplay devices when spotify isn't running and spotify is authenticated", isOn: $settings.settings.preferAirPlayOverSpotify)
+                    ToggleRow(title: "Prefer AirPlay over Spotify Devices", description: "Default to AirPlay devices when Spotify isn't running and you're signed in to Spotify.", isOn: $settings.settings.preferAirPlayOverSpotify)
                 }.modifier(SettingsContainerModifier())
                 case .lyrics:
                 VStack(alignment: .leading, spacing: 0) {
@@ -9611,35 +9611,35 @@ struct EyeBreakRecommendationsView: View {
                         title: String(localized: "The 20-20-20 Rule"),
                         description: String(localized: "Every 20 minutes, take a 20-second break to look at something 20 feet away. This helps reduce eye strain and gives eye muscles a break."),
                         icon: "eyes",
-                        color: .blue
+                        color: .accentColor
                     )
 
                     recommendationCard(
                         title: String(localized: "Adjust Your Screen"),
-                        description: String(localized: "Position your monitor about an arm's length away and adjust the angle of the screen so that the top it is at or slightly below eye level. This reduces strain on your neck and eyes."),
+                        description: String(localized: "Position your monitor about an arm's length away and adjust the angle of the screen so that the top of the screen is at or slightly below eye level. This reduces strain on your neck and eyes."),
                         icon: "display",
-                        color: .green
+                        color: .accentColor
                     )
 
                     recommendationCard(
                         title: String(localized: "Reduce Blue Light"),
-                        description: String(localized: "Use Night Shift on your mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep."),
+                        description: String(localized: "Use Night Shift on your Mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep."),
                         icon: "moon.stars.fill",
-                        color: .orange
+                        color: .accentColor
                     )
 
                     recommendationCard(
                         title: String(localized: "Optimize Lighting"),
                         description: String(localized: "Ensure your workspace has adequate lighting that doesn't cause glare on your screen. Avoid working in a dark room with just the screen light."),
                         icon: "lightbulb.fill",
-                        color: .yellow
+                        color: .accentColor
                     )
 
                     recommendationCard(
                         title: String(localized: "Stay Hydrated"),
                         description: String(localized: "Drink plenty of water throughout the day. Dehydration can contribute to dry eyes and eye strain."),
                         icon: "drop.fill",
-                        color: .cyan
+                        color: .accentColor
                     )
                 }
             }
@@ -9796,7 +9796,7 @@ struct EyeBreakSettingsView: View {
                     VStack(alignment: .center) {
                         Text("\(eyeBreakManager.breaksTakenToday)")
                             .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.blue)
+                            .foregroundColor(.accentColor)
                         Text("Breaks Taken")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -9808,7 +9808,7 @@ struct EyeBreakSettingsView: View {
                     VStack(alignment: .center) {
                         Text("\(eyeBreakManager.currentStreak)")
                             .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.orange)
+                            .foregroundColor(.accentColor)
                         Text("Day Streak")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -10042,7 +10042,7 @@ struct EyeBreakGraphView: View {
                 title: String(localized: "Today's Breaks"),
                 value: "\(summaries.first?.completedBreaks ?? 0)",
                 icon: "eyes",
-                color: .blue,
+                color: .accentColor,
                 trend: String(localized: "+\(String(summaries.first?.completedBreaks ?? 0)) today")
             )
 
@@ -10058,7 +10058,7 @@ struct EyeBreakGraphView: View {
                 title: String(localized: "Current Streak"),
                 value: "\(EyeBreakManager.shared.currentStreak)",
                 icon: "bolt",
-                color: .orange,
+                color: .accentColor,
                 trend: String(localized: "days in a row")
             )
 
@@ -10897,7 +10897,7 @@ struct ModernUpdateStatusView: View {
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(.green)
                         .symbolEffect(.bounce, value: upToDateAnimationTrigger)
-                    Text("You are up to date!")
+                    Text("You are up to date.")
                         .foregroundStyle(.secondary)
                     if canShowReleaseNotes {
                         releaseNotesButton
@@ -10910,7 +10910,7 @@ struct ModernUpdateStatusView: View {
                 }
             case .available(let version, let asset):
                 VStack(spacing: 12) {
-                    Text("Version \(version) is available!")
+                    Text("Version \(version) is available.")
                         .font(.system(size: 16, weight: .bold))
 
                     Button(action: { updateChecker.downloadUpdate(asset: asset) }) {
@@ -10922,9 +10922,8 @@ struct ModernUpdateStatusView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
-                        .background(Color.accentColor.gradient)
+                        .background(Color.accentColor)
                         .clipShape(Capsule())
-                        .shadow(color: .accentColor.opacity(0.4), radius: 8, y: 4)
                     }
                     .buttonStyle(.plain)
 
@@ -10950,7 +10949,7 @@ struct ModernUpdateStatusView: View {
                 .transition(.opacity)
             case .downloaded:
                 VStack(spacing: 12) {
-                    Text("Download Complete!")
+                    Text("Download Complete")
                         .font(.system(size: 16, weight: .bold))
                     Button(action: { updateChecker.installAndRelaunch() }) {
                         HStack(spacing: 8) {
@@ -10961,9 +10960,8 @@ struct ModernUpdateStatusView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
-                        .background(Color.green.gradient)
+                        .background(Color.green)
                         .clipShape(Capsule())
-                        .shadow(color: .green.opacity(0.4), radius: 8, y: 4)
                     }
                     .buttonStyle(.plain)
 
@@ -11105,7 +11103,7 @@ struct DownloadingView: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.1)).frame(height: 12)
                 Capsule()
-                    .fill(Color.accentColor.gradient)
+                    .fill(Color.accentColor)
                     .frame(width: (300 * progress), height: 12)
                     .animation(.easeOut, value: progress)
             }
@@ -11426,7 +11424,7 @@ struct MenuBarHidingSettingsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Rehide Strategy").font(.subheadline).foregroundColor(.secondary)
                             Picker("", selection: $settings.settings.rehideStrategy) {
-                                Text("Smart (when mouse leaves)").tag("smart"); Text("Timed").tag("timed"); Text("App Change").tag("focusedApp")
+                                Text("When Mouse Leaves").tag("smart"); Text("Timed").tag("timed"); Text("App Change").tag("focusedApp")
                             }.pickerStyle(.segmented).padding(.horizontal)
                         }.padding()
                         if settings.settings.rehideStrategy == "timed" {
@@ -11435,7 +11433,7 @@ struct MenuBarHidingSettingsView: View {
                         if settings.settings.rehideStrategy != "focusedApp" {
                             Divider().padding(.leading, 20)
                             CustomSliderRowView(label: "Keep Opened Items", value: $settings.settings.menuBarKeepOpenedItemsDelay, range: 0...30, specifier: "%.0fs")
-                            Text("After a revealed item's menu closes, keep items shown this long before rehiding, so a stray click doesn't send the item away. 0 rehides at once.")
+                            Text("After a revealed item's menu closes, keep items shown this long before rehiding, so a stray click doesn't send the item away. Set to 0 to rehide immediately.")
                                 .font(.caption).foregroundColor(.secondary)
                                 .padding(.horizontal).padding(.bottom, 10)
                         }
@@ -11542,7 +11540,7 @@ struct MenuBarProfilesSettingsView: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Menu Bar Profiles").font(.title2.bold())
-                Text("Reveal hidden menu bar items when a condition is met — battery level, active Focus, Wi-Fi network, or a script's exit code — and bind profiles to displays, Spaces, or Focus filters.").font(.caption).foregroundColor(.secondary)
+                Text("Reveal hidden menu bar items based on battery level, Focus, Wi-Fi network, or a script's exit code, and bind profiles to displays, Spaces, or Focus filters.").font(.caption).foregroundColor(.secondary)
             }
 
             VStack(spacing: 0) {
@@ -11701,7 +11699,7 @@ private struct MenuBarRevealConditionsSection: View {
             }
 
             if profile.revealConditions.isEmpty {
-                Text("No conditions — this profile will never reveal items.")
+                Text("No conditions. This profile will never reveal items.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
@@ -11807,7 +11805,7 @@ private struct MenuBarRevealConditionEditor: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 220)
                         if condition.kind == .scriptExitCode {
-                            Text("exit =")
+                            Text("exit code")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             TextField("0", value: $condition.scriptExitCode, format: .number)
@@ -12021,7 +12019,7 @@ private struct MenuBarFocusBindingsEditor: View {
                 }
             }
 
-            Text("Leave empty selections unchecked to bind to any Focus filter by enabling \"Focus\" alone.")
+            Text("To bind to any Focus filter, turn on Focus and leave every filter unchecked.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
@@ -12066,7 +12064,7 @@ struct MenuBarAppearanceEditor: View {
                 Divider().padding(.leading, 20)
                 ToggleRow(
                     title: "Frosted Overlay",
-                    description: "Layer frosted liquid glass on top of the base glass, matching the lock screen treatment.",
+                    description: "Layer frosted liquid glass on top of the base glass, like on the lock screen.",
                     isOn: $settings.settings.menuBarBlur
                 )
             }
@@ -12089,7 +12087,7 @@ struct MenuBarAppearanceEditor: View {
                 Divider().padding(.leading, 20)
                 ToggleRow(
                     title: "Two-Tone Gradient",
-                    description: "Adaptive tint follows the colours of your wallpaper behind the menu bar. Turn this on to blend its left and right sides instead of using one average colour.",
+                    description: "Adaptive tint follows the colors of your wallpaper behind the menu bar. Turn this on to blend its left and right sides instead of using one average color.",
                     isOn: $settings.settings.menuBarAdaptiveTintGradient
                 )
             }

@@ -570,7 +570,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
-    func bluetoothPowerWarn() { setStatusThrottled(String(localized: "Bluetooth is off!")) }
+    func bluetoothPowerWarn() { setStatusThrottled(String(localized: "Bluetooth is off")) }
 
     func updatePresence(presence: Bool, reason: String) {
         if isEnabled && isBluetoothAuthenticating {

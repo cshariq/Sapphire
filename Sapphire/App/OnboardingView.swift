@@ -105,7 +105,7 @@ private struct WelcomeStepView: View {
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
 
-            Text("A new way to experience your Mac's notch.\nLet's get you set up.")
+            Text("A new way to use your Mac's notch.")
                 .font(.title3)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -263,13 +263,13 @@ private struct HelperInstallationStepView: View {
         case .requiresApproval:
             return String(localized: "System Settings should be open. Under Allow in the Background, turn on both Sapphire and Sapphire Helper, then return here.")
         case .enabled where !helperManager.isRunning:
-            return String(localized: "The helper is approved but not responding. Tap Reset Helper so Sapphire can unregister its own background items and reinstall the helper.")
+            return String(localized: "The helper is approved but not responding. Click Reset Helper so Sapphire can unregister its own background items and reinstall the helper.")
         case .enabled:
             return String(localized: "Helper is ready. You can continue.")
         case .notFound:
-            return String(localized: "macOS lost the helper registration (SAP-H3). Tap Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck.")
+            return String(localized: "macOS lost the helper registration (SAP-H3). Click Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck.")
         default:
-            return String(localized: "Tap Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity.")
+            return String(localized: "Click Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity.")
         }
     }
 
@@ -287,10 +287,10 @@ private struct PrivacyStepView: View {
                 .font(.system(size: 48, weight: .bold))
                 .foregroundStyle(.indigo)
 
-            Text("Your Privacy Matters")
+            Text("Privacy")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
-            Text("We believe in transparency. Please review our data handling practices below.")
+            Text("Here's what Sapphire collects, and what it doesn't.")
                 .font(.title3)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -301,22 +301,22 @@ private struct PrivacyStepView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     PrivacySection(
                         title: "Data We Collect (Analytics)",
-                        content: "To improve Sapphire, we collect completely anonymous, aggregated usage data. This helps us understand which features are popular, identify bugs, and make the app better for everyone."
+                        content: "Sapphire collects anonymous, aggregated usage data to find bugs and see which features are used."
                     )
 
                     PrivacySection(
-                        title: "What This Includes:",
-                        content: "• Feature usage frequency (e.g., how often a widget is used)\n• App version and macOS version\n• Anonymous crash reports"
+                        title: "What This Includes",
+                        content: "• How often each feature is used\n• App version and macOS version\n• Anonymous crash reports"
                     )
 
                     PrivacySection(
-                        title: "Data We NEVER Collect",
-                        content: "We are committed to your privacy. We DO NOT automatically collect, store, or transmit any personal or sensitive information. This includes, but is not limited to:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps"
+                        title: "Data We Don't Collect",
+                        content: "We don't automatically collect, store, or transmit any personal or sensitive information, including:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps"
                     )
 
                     PrivacySection(
                         title: "Data Storage & Third Parties",
-                        content: "Anonymous data is processed by google for analytics. This data is always aggregated and cannot be used to identify you."
+                        content: "Anonymous data is processed by Google for analytics. It is always aggregated and cannot be used to identify you."
                     )
                 }
                 .padding(20)
@@ -359,7 +359,7 @@ private struct MusicChoiceStepView: View {
             Text("Choose Your Music Service")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
-            Text("Select your primary music player for the best integration.")
+            Text("Select your primary music player.")
                 .font(.title3)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -409,10 +409,10 @@ private struct SpotifySetupStepView: View {
         VStack(spacing: 20) {
             Spacer()
             Text("Spotify Setup").font(.system(size: 32, weight: .bold, design: .rounded))
-            Text("Log in to enable enhanced features like liking tracks and skipping ads directly from the notch.").font(.title3).multilineTextAlignment(.center).foregroundColor(.secondary).padding(.horizontal)
+            Text("Log in to like tracks and skip ads from the notch.").font(.title3).multilineTextAlignment(.center).foregroundColor(.secondary).padding(.horizontal)
             VStack(alignment: .center, spacing: 15) {
                 if musicManager.isPrivateAPIAuthenticated {
-                    HStack(spacing: 10) { Image(systemName: "checkmark.circle.fill").font(.title).foregroundColor(.green); Text("Logged in successfully!").font(.headline) }
+                    HStack(spacing: 10) { Image(systemName: "checkmark.circle.fill").font(.title).foregroundColor(.green); Text("Logged in").font(.headline) }
                 } else {
                     Text("Private API Login").font(.headline)
                     Text("This method works for both Free and Premium users. Use at your own risk.").font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
@@ -458,11 +458,11 @@ private struct BatterySetupStepView: View {
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
-            Text("Intelligent Battery Management")
+            Text("Battery Management")
                 .fontWeight(.bold)
                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
-            Text("Protect your battery's health and extend its lifespan with these features.")
+            Text("Limit charging and heat to slow battery wear.")
                 .font(.title3)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -504,7 +504,7 @@ private struct CorePreferencesStepView: View {
         VStack(spacing: 20) {
             Spacer()
             Text("Quick Setup").font(.system(size: 32, weight: .bold, design: .rounded))
-            Text("Personalize your experience. You can change these any time in Settings.").font(.title3).multilineTextAlignment(.center).foregroundColor(.secondary).padding(.horizontal, 50)
+            Text("You can change these any time in Settings.").font(.title3).multilineTextAlignment(.center).foregroundColor(.secondary).padding(.horizontal, 50)
             VStack(spacing: 15) {
                 ModernOnboardingRow(iconName: "sparkles.tv", iconColor: .cyan, title: "Show Custom HUDs", description: "Replace default volume & brightness indicators.") { SettingsSwitch(isOn: showHudsBinding) }
                 ModernOnboardingRow(iconName: "eye.fill", iconColor: .cyan, title: "Enable Eye Break Reminders", description: "Get reminded to look away from your screen periodically.") {
@@ -529,7 +529,7 @@ private struct LockScreenSetupStepView: View {
             Text("Lock Screen Features")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
-            Text("Enhance your Mac's lock screen with live activities and widgets directly in the notch area.")
+            Text("Show live activities and widgets in the notch on the lock screen.")
                 .font(.title3)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -585,13 +585,7 @@ private struct SubscriptionOverviewStepView: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.purple.opacity(0.35), .indigo.opacity(0.2)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(Color.indigo.opacity(0.3))
                         .frame(width: 44, height: 44)
                     Image(systemName: subscriptionManager.isSignedIn ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
                         .font(.system(size: 22))
@@ -612,14 +606,7 @@ private struct SubscriptionOverviewStepView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
             )
             .padding(.horizontal, 50)
 
@@ -742,13 +729,7 @@ private struct OnboardingPlanCard: View {
             }
 
             Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [accent.opacity(0.45), accent.opacity(0.05)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .fill(accent.opacity(0.3))
                 .frame(height: 1)
 
             VStack(alignment: .leading, spacing: 9) {
@@ -781,19 +762,7 @@ private struct OnboardingPlanCard: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
-                        .background(
-                            LinearGradient(
-                                colors: [accent, accent.opacity(0.72)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                        )
-                        .shadow(color: accent.opacity(0.35), radius: 10, y: 4)
+                        .background(accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -805,33 +774,13 @@ private struct OnboardingPlanCard: View {
                 .fill(.ultraThinMaterial)
                 .overlay {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    accent.opacity(isCurrent ? 0.14 : 0.06),
-                                    Color.black.opacity(0.08)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(accent.opacity(isCurrent ? 0.12 : 0.05))
                 }
         }
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            accent.opacity(isCurrent ? 0.75 : 0.28),
-                            Color.white.opacity(0.06)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: isCurrent ? 1.5 : 1
-                )
+                .stroke(accent.opacity(isCurrent ? 0.75 : 0.28), lineWidth: isCurrent ? 1.5 : 1)
         }
-        .shadow(color: isCurrent ? accent.opacity(0.22) : Color.black.opacity(0.18), radius: isCurrent ? 16 : 8, y: 6)
     }
 }
 
@@ -851,7 +800,7 @@ private struct FinishStepView: View {
                 .frame(width: 96, height: 96)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
 
-            Text("You're All Set!")
+            Text("You're All Set")
                 .font(.system(size: 32, weight: .bold, design: .rounded))
 
             Text("Version \(currentAppVersion)")
@@ -892,8 +841,8 @@ private struct OnboardingUpdateStatusView: View {
         Group {
             switch updateChecker.status {
             case .checking: HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking for updates...").foregroundStyle(.secondary) }
-            case .upToDate: HStack(spacing: 8) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green); Text("You are up to date!").foregroundStyle(.secondary) }
-            case .available(let version, _): VStack(spacing: 8) { Text("Version \(version) is available!").font(.headline); Link(destination: URL(string: "https://github.com/cshariq/Sapphire/releases")!) { Text("Download from GitHub") }.buttonStyle(.bordered).tint(.accentColor) }
+            case .upToDate: HStack(spacing: 8) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green); Text("You're up to date.").foregroundStyle(.secondary) }
+            case .available(let version, _): VStack(spacing: 8) { Text("Version \(version) is available.").font(.headline); Link(destination: URL(string: "https://github.com/cshariq/Sapphire/releases")!) { Text("Download from GitHub") }.buttonStyle(.bordered).tint(.accentColor) }
             case .error(let message): HStack(spacing: 8) { Image(systemName: "xmark.octagon.fill").foregroundColor(.red); Text(message).foregroundStyle(.secondary).lineLimit(1) }
             default: EmptyView()
             }
@@ -923,7 +872,7 @@ private struct OnboardingButton: View {
         Button(action: action) {
             Text(title).font(.headline.weight(.bold)).foregroundColor(isEnabled ? .black.opacity(0.8) : .gray).padding(.horizontal, 60).frame(height: 50)
                 .background(LinearGradient(gradient: Gradient(colors: isEnabled ? [Color(red: 154/255, green: 249/255, blue: 165/255), Color(red: 174/255, green: 255/255, blue: 247/255)] : [.gray.opacity(0.5)]), startPoint: .leading, endPoint: .trailing))
-                .clipShape(Capsule()).shadow(color: .white.opacity(isEnabled ? 0.3 : 0), radius: 10, y: 5)
+                .clipShape(Capsule())
         }.buttonStyle(.plain).scaleEffect(isEnabled ? 1.0 : 0.98).padding(.bottom, 50)
     }
 }
@@ -946,7 +895,7 @@ private struct MusicServiceButton: View {
             iconView.aspectRatio(contentMode: .fit).frame(width: 28, height: 28)
             Text(title).font(.system(size: 18, weight: .bold, design: .rounded)); Spacer()
             Image(systemName: "checkmark.circle.fill").font(.title2).foregroundStyle(.white).opacity(isSelected ? 1.0 : 0.0).scaleEffect(isSelected ? 1.0 : 0.5)
-        }.padding(.horizontal, 20).frame(height: 65).background(ZStack { RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.black.opacity(0.2)); RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1); if isSelected { RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.indigo, lineWidth: 3).shadow(color: .indigo.opacity(0.5), radius: 8) } })
+        }.padding(.horizontal, 20).frame(height: 65).background(ZStack { RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.black.opacity(0.2)); RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1); if isSelected { RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.indigo, lineWidth: 3) } })
         .scaleEffect(isPressed ? 0.97 : 1.0).contentShape(Rectangle()).onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { action() } }
         .gesture(DragGesture(minimumDistance: 0).onChanged { _ in if !isPressed { withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isPressed = true } } }.onEnded { _ in withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isPressed = false } }).animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
@@ -981,10 +930,9 @@ private struct PermissionRowView: View {
                         .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
-                .background(Color.accentColor.gradient)
+                .background(Color.accentColor)
                 .foregroundColor(.white)
                 .clipShape(Capsule())
-                .shadow(color: .accentColor.opacity(0.4), radius: 5, y: 2)
             }
         }.padding().background(.black.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.1), lineWidth: 1))
     }

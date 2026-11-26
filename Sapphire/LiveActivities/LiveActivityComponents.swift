@@ -14,13 +14,13 @@ import AVFoundation
 private func foregroundStyle(for state: ManagementState) -> AnyShapeStyle {
     switch state {
     case .inhibited:
-        return AnyShapeStyle(LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+        return AnyShapeStyle(Color.blue)
     case .calibrationStarted, .calibrating:
         return AnyShapeStyle(Color.purple)
     case .calibrationDone:
-        return AnyShapeStyle(LinearGradient(colors: [.purple, .green], startPoint: .topLeading, endPoint: .bottomTrailing))
+        return AnyShapeStyle(Color.green)
     case .calibrationFailed:
-        return AnyShapeStyle(LinearGradient(colors: [.cyan, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+        return AnyShapeStyle(Color.red)
     case .sailing:
         return AnyShapeStyle(Color.orange)
     case .dischargeStarted, .discharging, .dischargeStopped:
@@ -415,13 +415,7 @@ struct IntelligenceAgentActivityView {
     static func left() -> some View {
         Image(systemName: "sparkle")
             .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [Color(red: 0.36, green: 0.90, blue: 0.76), Color.pink.opacity(0.9)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            .foregroundStyle(Color(red: 0.36, green: 0.90, blue: 0.76))
     }
 
     static func right(status: String, stepTitle: String, current: Int, total: Int) -> some View {
@@ -861,11 +855,11 @@ struct FilledBatteryIcon: View {
         case .calibrating, .calibrationStarted:
             return AnyShapeStyle(Color.purple)
         case .inhibited:
-            return AnyShapeStyle(LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+            return AnyShapeStyle(Color.blue)
         case .calibrationDone:
-            return AnyShapeStyle(LinearGradient(colors: [.purple, .green], startPoint: .topLeading, endPoint: .bottomTrailing))
+            return AnyShapeStyle(Color.green)
         case .calibrationFailed:
-            return AnyShapeStyle(LinearGradient(colors: [.cyan, .red], startPoint: .topLeading, endPoint: .bottomTrailing))
+            return AnyShapeStyle(Color.red)
         default:
             if isCharging { return AnyShapeStyle(Color.green) }
             if isLowBattery { return AnyShapeStyle(Color.red) }
@@ -1106,7 +1100,7 @@ struct EyeBreakFullActivityView: View {
                     Text("Look Away")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
 
-                    Text("Focus 20ft away.")
+                    Text("Look at something 20 feet away.")
                         .font(.callout)
                         .foregroundColor(.secondary)
                 }
@@ -1174,8 +1168,6 @@ struct EyeBreakPillButtonStyle: ButtonStyle {
             .background(backgroundColor(for: configuration))
             .foregroundColor(foregroundColor())
             .clipShape(Capsule())
-            .shadow(color: isProminent && (isHovered || configuration.isPressed) ? .cyan.opacity(0.2) : .clear,
-                    radius: 4, x: 0, y: 0)
             .scaleEffect(configuration.isPressed ? 0.97 : isHovered ? 1.02 : 1.0)
             .animation(.interpolatingSpring(stiffness: 300, damping: 15),
                        value: configuration.isPressed)
@@ -2044,14 +2036,6 @@ struct OTPLiveActivityView: View {
     @State private var isShowing = false
 
     private var seedColor: Color { Color(red: 0.22, green: 0.68, blue: 0.58) }
-    private var accentColor: Color { Color(red: 0.42, green: 0.84, blue: 0.72) }
-    private var gradient: LinearGradient {
-        LinearGradient(
-            colors: [seedColor, accentColor],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
 
     private var digits: [String] {
         Array(event.code).map(String.init)
@@ -2112,9 +2096,8 @@ struct OTPLiveActivityView: View {
                         .frame(width: cellWidth, height: 52)
                         .background(
                             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .fill(gradient)
+                                .fill(seedColor)
                         )
-                        .shadow(color: seedColor.opacity(0.35), radius: 8, y: 3)
                 }
             }
             .scaleEffect(isShowing ? 1 : 0.85)

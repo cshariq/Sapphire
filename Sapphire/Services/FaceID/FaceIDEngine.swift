@@ -606,7 +606,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             self.appState = .registeredAndIdle
-            self.userInstruction = String(localized: "Registration Complete!")
+            self.userInstruction = String(localized: "Registration Complete")
             self.cleanupFaceIDResources()
             AuthenticationManager.shared.fetchRegisteredFaces()
         }
@@ -920,7 +920,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
             DispatchQueue.main.async {
                 self.appState = .recognized
                 self.faceIsRecognized = true
-                self.userInstruction = String(localized: "Authenticated!")
+                self.userInstruction = String(localized: "Authenticated")
                 AuthenticationManager.shared.handleFaceIDAuthenticated()
             }
         }

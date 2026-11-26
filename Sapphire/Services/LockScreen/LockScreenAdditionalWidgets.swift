@@ -411,9 +411,9 @@ struct LockScreenSystemMiniWidget: View {
                 .font(.system(size: 14, weight: .bold, design: .rounded))
 
             HStack(spacing: 16) {
-                systemMeter(title: "CPU", value: cpu, color: .cyan)
-                systemMeter(title: "RAM", value: ram, color: .purple)
-                systemMeter(title: "GPU", value: gpu, color: .green)
+                systemMeter(title: "CPU", value: cpu)
+                systemMeter(title: "RAM", value: ram)
+                systemMeter(title: "GPU", value: gpu)
             }
         }
         .foregroundStyle(.white)
@@ -429,14 +429,14 @@ struct LockScreenSystemMiniWidget: View {
         }
     }
 
-    private func systemMeter(title: String, value: Int, color: Color) -> some View {
+    private func systemMeter(title: String, value: Int) -> some View {
         VStack(spacing: 6) {
             ZStack {
                 ProgressRingView(
                     progress: Double(value) / 100,
                     lineWidth: 5,
                     track: AnyShapeStyle(Color.white.opacity(0.12)),
-                    active: color
+                    active: Color.white
                 )
                 Text("\(value)")
                     .font(.system(size: 12, weight: .bold, design: .rounded))

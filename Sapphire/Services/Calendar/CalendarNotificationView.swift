@@ -40,13 +40,7 @@ struct CalendarNotificationLayout<Details: View>: View {
             HStack(spacing: 13) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [color, color.opacity(0.72)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(color)
                         .overlay {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(.white.opacity(0.18), lineWidth: 0.75)
@@ -58,7 +52,6 @@ struct CalendarNotificationLayout<Details: View>: View {
                         .foregroundStyle(.white)
                 }
                 .frame(width: 52, height: 52)
-                .shadow(color: color.opacity(0.28), radius: 10, y: 5)
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(category.uppercased())

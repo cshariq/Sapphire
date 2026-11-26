@@ -1019,7 +1019,7 @@ struct QueueAndPlaylistsView: View {
 
                     materialExpressiveCard(title: String(localized: "Up Next"), systemImage: "list.bullet", accent: MaterialChartPalette.primary) {
                         if musicManager.nativeQueue.isEmpty {
-                            Text("Nothing queued — add tracks from Library or suggestions.")
+                            Text("Nothing queued. Add tracks from Library or suggestions.")
                                 .font(.system(size: 11, weight: .medium, design: .rounded))
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 6)
@@ -2888,7 +2888,7 @@ struct DevicesView: View {
             if musicManager.isPrivateAPIAuthenticated,
                sortedNativeDevices.filter({ $0.deviceId != musicManager.spotifyPrivateAPI.controllerDeviceID }).isEmpty,
                sortedOfficialDevices.isEmpty {
-                Text("No Spotify speakers online. Open the Spotify desktop app (or another Connect device) to play audio — Sapphire only controls playback.")
+                Text("No Spotify devices online. Open Spotify on this Mac or another device to play audio. Sapphire only controls playback.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .padding(12)
@@ -3191,7 +3191,7 @@ fileprivate struct FreeUserNoticeView: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.lock.fill").font(.title3).foregroundColor(.yellow)
-            Text("Switching devices requires a Spotify Premium account or a private api login.").font(.subheadline).foregroundColor(.secondary)
+            Text("Switching devices requires a Spotify Premium account or a Private API login.").font(.subheadline).foregroundColor(.secondary)
         }.padding().background(Color.yellow.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
@@ -4967,10 +4967,6 @@ struct LoginPromptView: View {
 
             Text("Please log in to Spotify via the Music section in Sapphire's settings to use this feature.")
                 .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
-
-            Text("Use the back control in the notch to return.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
         .padding(30)
         .frame(width: 400)
@@ -4991,10 +4987,6 @@ struct ApiKeysMissingView: View {
 
             Text("To enable Spotify integration, please add your API credentials in Sapphire's settings.")
                 .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
-
-            Text("Use the back control in the notch to return.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
         .padding(30)
         .frame(width: 400)
@@ -5015,10 +5007,6 @@ struct GeminiApiKeysMissingView: View {
 
             Text("To use Gemini Live, please add your Google AI Studio API key in Sapphire's settings.")
                 .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
-
-            Text("Use the back control in the notch to return.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
         .padding(30)
         .frame(width: 400)
@@ -5432,7 +5420,7 @@ struct AppleMusicSearchView: View {
                 .font(.system(size: 14, weight: .bold, design: .rounded))
             Text(denied
                  ? String(localized: "Allow Sapphire under System Settings → Privacy & Security → Media & Apple Music.")
-                 : String(localized: "Browse your library, recommendations and the full catalog, and play without leaving the notch."))
+                 : String(localized: "Browse your library, recommendations and the full catalog."))
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

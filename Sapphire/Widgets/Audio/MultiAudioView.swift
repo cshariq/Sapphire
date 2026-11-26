@@ -48,7 +48,7 @@ struct MultiAudioPermissionRequiredView: View {
             Text("Screen Recording Required")
                 .font(.title2).bold()
 
-            Text("Multi-audio won't work without Screen Recording permission. Sapphire needs it to adjust app volumes, eqs and more.")
+            Text("Sapphire needs Screen Recording permission to adjust volume and EQ for each app.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -68,10 +68,6 @@ struct MultiAudioPermissionRequiredView: View {
             .tint(.orange)
 
             Text("After enabling it, reopen this menu.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-
-            Text("Use the back control in the notch to return.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -490,7 +486,7 @@ fileprivate struct DeviceControlCard: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    if isActive { Circle().fill(Color.accentColor).frame(width: 6).shadow(color: .accentColor.opacity(0.6), radius: 3) }
+                    if isActive { Circle().fill(Color.accentColor).frame(width: 6) }
                     Text(device.name).font(.system(size: 11, weight: isActive ? .bold : .semibold)).lineLimit(1)
                 }
                 Text(getSubtitle()).font(.system(size: 8, weight: .semibold)).foregroundStyle(getSubtitleColor())

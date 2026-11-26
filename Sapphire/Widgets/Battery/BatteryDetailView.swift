@@ -172,7 +172,7 @@ struct BatteryDetailView: View {
                         dragLimit = nil
                     }
             )
-            .help("Drag to set the charge limit — charging pauses at this level to help preserve battery health.")
+            .help("Drag to set the charge limit. Charging pauses at this level to help preserve battery health.")
         }
         .frame(height: 24)
     }
